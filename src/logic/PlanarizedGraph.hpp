@@ -7,6 +7,8 @@
 
 class PlanarizedGraph {
 private:
+    SpatialGrid grid;
+
     int nextNodeId = 0;
     int nextEdgeId = 0;
 
@@ -20,6 +22,14 @@ private:
     // Math helper for createCrossing
     bool isPointOnSegment(double px, double py, int u_id, int v_id);
 public:
+    struct IntersectionData {
+        double x, y;
+        int edge1_id;
+        int edge2_id;
+    };
+
+    PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections);
+
     int getNextEdgeId() { return nextEdgeId++; }
     int getNextNodeId() { return nextNodeId++; }
 

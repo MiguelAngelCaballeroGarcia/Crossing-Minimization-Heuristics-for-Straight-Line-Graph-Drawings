@@ -1,6 +1,16 @@
 #include "PlanarizedGraph.hpp"
 #include <algorithm>
 
+#include "PlanarizedGraph.hpp"
+#include <algorithm>
+#include <cmath>
+
+PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections) 
+    : grid(originalGraph) {
+    
+    //TODO: Implement the constructor to initialize the planarized graph using the original graph and the intersection data.
+}
+
 void PlanarizedGraph::destroyCrossing(int crossingNodeIdx) {
     PlanarNode& cNode = nodes[crossingNodeIdx];
 

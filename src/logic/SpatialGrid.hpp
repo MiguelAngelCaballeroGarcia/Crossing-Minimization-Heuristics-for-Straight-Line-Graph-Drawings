@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <algorithm>
 #include "Graph.hpp"
 
 struct GridCell {
@@ -21,13 +22,21 @@ private:
     int getCellIndex(double x, double y) const;
 
 public:
-    SpatialGrid(double min_x, double max_x, double min_y, double max_y, int totalNodes);
+// Bulk-loading constructor
+    SpatialGrid(const Graph& graph);
 
+    // Getters for the PlanarizedGraph to build the Floating Frame
+    double getMinX() const { return minX; };
+    double getMaxX() const { return maxX; };
+    double getMinY() const { return minY; };
+    double getMaxY() const { return maxY; };
+
+    // Public Incremental Update Methods
     void insertNode(int nodeIdx, double x, double y);
-    
-    // Remember: an edge might be inserted into multiple cells!
     void insertEdge(int edgeIdx, double x1, double y1, double x2, double y2);
+    
+    // NEW: Required for incremental updates when nodes move
+    void removeEdge(int edgeIdx, double x1, double y1, double x2, double y2);
 
-    // Get a cell for querying
-    const GridCell& getCell(int index) const { return cells[index]; }
+    const GridCell& getCell(int index) const { return cells[index]; };
 };
