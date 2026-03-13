@@ -26,6 +26,8 @@ public:
         double x, y;
         int edge1_id;
         int edge2_id;
+        double t1; // Position along edge1 (0.0 at start, 1.0 at end)
+        double t2; // Position along edge2 (0.0 at start, 1.0 at end)
     };
 
     PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections);

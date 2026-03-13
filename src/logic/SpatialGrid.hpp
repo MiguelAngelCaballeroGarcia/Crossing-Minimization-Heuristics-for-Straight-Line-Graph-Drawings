@@ -22,7 +22,7 @@ private:
     int getCellIndex(double x, double y) const;
 
 public:
-// Bulk-loading constructor
+    // Bulk-loading constructor
     SpatialGrid(const Graph& graph);
 
     // Getters for the PlanarizedGraph to build the Floating Frame
@@ -30,6 +30,8 @@ public:
     double getMaxX() const { return maxX; };
     double getMinY() const { return minY; };
     double getMaxY() const { return maxY; };
+
+    size_t getNumCells() const { return cells.size(); }
 
     // Public Incremental Update Methods
     void insertNode(int nodeIdx, double x, double y);
