@@ -75,7 +75,6 @@ public:
     // Helper to find where a crossing sits between two nodes on an edge
     void insertCrossingIntoEdgeChain(int edgeId, int crossingNodeIdx);
     
-    // The two methods you requested
     void destroyCrossing(int crossingNodeIdx);
     void createCrossing(int edge1Id, int edge2Id, double x, double y);
 };

@@ -2,11 +2,10 @@
 
 #include <vector>
 #include <algorithm>
-#include "Graph.hpp"
 
 struct GridCell {
-    std::vector<int> nodeIndices; // Indices into Graph::nodes
-    std::vector<int> edgeIndices; // Indices into Graph::edges
+    std::vector<int> nodeIndices; 
+    std::vector<int> edgeIndices; 
 };
 
 class SpatialGrid {
@@ -15,30 +14,32 @@ private:
     double cellWidth, cellHeight;
     int numCellsX, numCellsY;
     
-    // The actual storage: a 1D vector representing the 2D grid
     std::vector<GridCell> cells;
 
     // Helper to convert (x, y) coordinates to a 1D grid index
     int getCellIndex(double x, double y) const;
 
 public:
-    // Bulk-loading constructor
-    SpatialGrid(const Graph& graph);
+    // Default constructor (required so PlanarizedGraph can declare it as a member and initialize it later)
+    SpatialGrid();
 
-    // Getters for the PlanarizedGraph to build the Floating Frame
-    double getMinX() const { return minX; };
-    double getMaxX() const { return maxX; };
-    double getMinY() const { return minY; };
-    double getMaxY() const { return maxY; };
+    // Generic Geometric Constructor
+    SpatialGrid(double minX, double maxX, double minY, double maxY, int expectedTotalNodes);
+
+    // Getters for the Floating Frame
+    double getMinX() const { return minX; }
+    double getMaxX() const { return maxX; }
+    double getMinY() const { return minY; }
+    double getMaxY() const { return maxY; }
 
     size_t getNumCells() const { return cells.size(); }
 
     // Public Incremental Update Methods
     void insertNode(int nodeIdx, double x, double y);
+    void removeNode(int nodeIdx, double x, double y);
+
     void insertEdge(int edgeIdx, double x1, double y1, double x2, double y2);
-    
-    // NEW: Required for incremental updates when nodes move
     void removeEdge(int edgeIdx, double x1, double y1, double x2, double y2);
 
-    const GridCell& getCell(int index) const { return cells[index]; };
+    const GridCell& getCell(int index) const { return cells[index]; }
 };
