@@ -30,6 +30,8 @@ public:
         double t2; // Position along edge2 (0.0 at start, 1.0 at end)
     };
 
+    const SpatialGrid& getGrid() const;
+
     PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections);
 
     int getNextEdgeId() { return nextEdgeId++; }

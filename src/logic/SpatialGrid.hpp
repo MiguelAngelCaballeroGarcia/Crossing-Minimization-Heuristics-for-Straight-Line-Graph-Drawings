@@ -34,6 +34,11 @@ public:
 
     size_t getNumCells() const { return cells.size(); }
 
+    double getCellWidth() const { return cellWidth; }
+    double getCellHeight() const { return cellHeight; }
+    int getNumCellsX() const { return numCellsX; }
+    int getNumCellsY() const { return numCellsY; }
+
     // Public Incremental Update Methods
     void insertNode(int nodeIdx, double x, double y);
     void removeNode(int nodeIdx, double x, double y);

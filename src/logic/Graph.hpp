@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <tuple>
 
 class Graph {
 public:
@@ -26,4 +27,7 @@ public:
 
     // A method that computes crossings, splits edges, and returns a totally new graph
     Graph createPlanarizedGraph() const; 
+
+    // Returns minX, minY, maxX, maxY from all nodes.
+    std::tuple<double, double, double, double> getBounds() const;
 };

@@ -41,8 +41,12 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
     // 3. Setup Sort-by-t Buckets
     std::unordered_map<int, std::vector<std::pair<double, int>>> edgeBuckets;
     for (const auto& origEdge : originalGraph.edges) {
-        edgeBuckets[origEdge.id].push_back({0.0, origEdge.u_id});
-        edgeBuckets[origEdge.id].push_back({1.0, origEdge.v_id});
+        // origEdge.u_id is the index. We need originalGraph.nodes[index].id
+        int actual_U_ID = originalGraph.nodes[origEdge.u_id].id;
+        int actual_V_ID = originalGraph.nodes[origEdge.v_id].id;
+        
+        edgeBuckets[origEdge.id].push_back({0.0, actual_U_ID});
+        edgeBuckets[origEdge.id].push_back({1.0, actual_V_ID});
     }
     
     // 4. Create CROSSING nodes
@@ -235,4 +239,8 @@ bool PlanarizedGraph::isPointOnSegment(double px, double py, int u_id, int v_id)
     bool inY = py >= std::min(u.y, v.y) - epsilon && py <= std::max(u.y, v.y) + epsilon;
     
     return inX && inY;
+}
+
+const SpatialGrid& PlanarizedGraph::getGrid() const {
+    return grid;
 }

@@ -1,7 +1,9 @@
-#include "intersection_detector.hpp"
+#include "IntersectionDetector.hpp"
+#include <unordered_map>
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 
 // Helper to create a unique 64-bit key for any pair of 32-bit edge IDs.
 // This ensures we don't check Edge A vs Edge B multiple times if they share multiple cells.
@@ -11,9 +13,17 @@ inline uint64_t makeEdgePairKey(int id1, int id2) {
     return (min_id << 32) | max_id;
 }
 
-std::vector<PlanarizedGraph::IntersectionData> findIntersections(const Graph& graph, const SpatialGrid& grid) {
+std::vector<PlanarizedGraph::IntersectionData> IntersectionDetector::findIntersections(const Graph& graph, const SpatialGrid& grid) {
     std::vector<PlanarizedGraph::IntersectionData> intersections;
     std::unordered_set<uint64_t> checkedPairs;
+
+    // Graph::Edge IDs are not guaranteed to be contiguous vector indices.
+    // Build an ID -> edge lookup to avoid out-of-bounds vector access.
+    std::unordered_map<int, const Graph::Edge*> edgeById;
+    edgeById.reserve(graph.edges.size());
+    for (const auto& edge : graph.edges) {
+        edgeById[edge.id] = &edge;
+    }
     
     // We use a small epsilon to avoid floating point errors identifying 
     // shared endpoints (nodes) as crossings.
@@ -39,8 +49,14 @@ std::vector<PlanarizedGraph::IntersectionData> findIntersections(const Graph& gr
                 }
 
                 // 3. Fetch the actual graph edges and their geometric nodes
-                const auto& e1 = graph.edges[edge1_id];
-                const auto& e2 = graph.edges[edge2_id];
+                auto e1It = edgeById.find(edge1_id);
+                auto e2It = edgeById.find(edge2_id);
+                if (e1It == edgeById.end() || e2It == edgeById.end()) {
+                    continue;
+                }
+
+                const auto& e1 = *(e1It->second);
+                const auto& e2 = *(e2It->second);
 
                 // Optimization: If they share an original node, they can't cross in the middle.
                 if (e1.u_id == e2.u_id || e1.u_id == e2.v_id || 
