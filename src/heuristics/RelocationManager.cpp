@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 // Anonymous namespace for internal helper functions
 namespace {
@@ -85,6 +86,23 @@ namespace {
         }
         return originalNeighbors;
     }
+
+    /**
+     * @brief Collects original edge IDs incident to the selected ORIGINAL node.
+     * Any planar sub-segment that belongs to one of these original edges must be ignored.
+     */
+    std::unordered_set<int> collectIncidentOriginalEdgeIds(int nodeId, const PlanarizedGraph& pGraph) {
+        std::unordered_set<int> incidentOriginalEdgeIds;
+
+        for (const auto& [planarEdgeId, planarEdge] : pGraph.edges) {
+            (void)planarEdgeId;
+            if (planarEdge.u_id == nodeId || planarEdge.v_id == nodeId) {
+                incidentOriginalEdgeIds.insert(planarEdge.original_edge_id);
+            }
+        }
+
+        return incidentOriginalEdgeIds;
+    }
 }
 
 RelocationManager::RelocationManager(PlanarizedGraph& pGraph)
@@ -159,6 +177,7 @@ std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const Region
     std::vector<LocalSegment> localGeometry;
     std::unordered_set<int> processedEdgeIds;
     const auto& grid = m_pGraph.getGrid();
+    const auto incidentOriginalEdgeIds = collectIncidentOriginalEdgeIds(variableNodeId, m_pGraph);
 
     // ROI borders as "Static Walls"
     localGeometry.push_back({roi.minX, roi.minY, roi.maxX, roi.minY, -1}); // Bottom
@@ -178,8 +197,9 @@ std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const Region
                 if (edgeIt == m_pGraph.edges.end()) continue;
                 const auto& edge = edgeIt->second;
 
-                // Ignore edges connected to the moving node
-                if (edge.u_id == variableNodeId || edge.v_id == variableNodeId) continue;
+                // Ignore every planar sub-segment belonging to any original edge
+                // that is incident to the moving node.
+                if (incidentOriginalEdgeIds.count(edge.original_edge_id) > 0) continue;
 
                 auto uIt = m_pGraph.nodes.find(edge.u_id);
                 auto vIt = m_pGraph.nodes.find(edge.v_id);
@@ -195,6 +215,9 @@ std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const Region
             }
         }
     }
+
+    appendRaysToLocalGeometry(localGeometry, roi, variableNodeId);
+
     return localGeometry;
 }
 
@@ -238,4 +261,70 @@ std::optional<LocalSegment> RelocationManager::clipToBoundingBox(
 
     if (accept) return LocalSegment{x1, y1, x2, y2, edgeId};
     return std::nullopt;
+}
+
+void RelocationManager::appendRaysToLocalGeometry(std::vector<LocalSegment>& localGeometry,
+                                                  const RegionOfInterest& roi,
+                                                  int variableNodeId) {
+    // 1. Get the X_x nodes (true original neighbors of the variable node N)
+    auto neighbors = collectOriginalNeighbors(variableNodeId, m_pGraph);
+
+    // 2. Iterate through all nodes to find candidate V nodes
+    for (const auto& [vId, vNode] : m_pGraph.nodes) {
+        // V must be a "real" (ORIGINAL) node
+        if (vNode.type != PlanarizedGraph::NodeType::ORIGINAL) continue;
+        
+        // V cannot be the variable node N itself
+        if (vId == variableNodeId) continue;
+
+        // V must be strictly inside the ROI bounds (or on the border)
+        if (vNode.x < roi.minX || vNode.x > roi.maxX || 
+            vNode.y < roi.minY || vNode.y > roi.maxY) {
+            continue;
+        }
+
+        // 3. For each neighbor X_x, emit a ray from V in the opposite direction
+        for (int neighborId : neighbors) {
+            // V cannot be the same X_x node we are evaluating
+            if (vId == neighborId) continue; 
+
+            auto xIt = m_pGraph.nodes.find(neighborId);
+            if (xIt == m_pGraph.nodes.end()) continue;
+            const auto& xNode = xIt->second;
+
+            // The direction vector D away from X_x: D = V - X_x
+            double dx = vNode.x - xNode.x;
+            double dy = vNode.y - xNode.y;
+
+            // Guard against division by zero if nodes are on the exact same coordinate
+            if (std::abs(dx) < 1e-9 && std::abs(dy) < 1e-9) continue;
+
+            // Ray equation: P(t) = V + t * D, where t >= 0
+            // We find the smallest t that hits one of the ROI borders
+            double tMin = std::numeric_limits<double>::infinity();
+
+            if (dx > 0) { // Moving right
+                tMin = std::min(tMin, (roi.maxX - vNode.x) / dx);
+            } else if (dx < 0) { // Moving left
+                tMin = std::min(tMin, (roi.minX - vNode.x) / dx);
+            }
+
+            if (dy > 0) { // Moving up (assuming positive Y is up; logic works either way)
+                tMin = std::min(tMin, (roi.maxY - vNode.y) / dy);
+            } else if (dy < 0) { // Moving down
+                tMin = std::min(tMin, (roi.minY - vNode.y) / dy);
+            }
+
+            // If V is exactly on the border pointing outwards, tMin will be 0. 
+            // We ignore rays with 0 length.
+            if (std::isinf(tMin) || tMin <= 1e-9) continue;
+
+            // Calculate exact intersection point
+            double endX = vNode.x + tMin * dx;
+            double endY = vNode.y + tMin * dy;
+
+            // Add the ray to the geometry as a boundary edge (ID = -1)
+            localGeometry.push_back({vNode.x, vNode.y, endX, endY, -1});
+        }
+    }
 }

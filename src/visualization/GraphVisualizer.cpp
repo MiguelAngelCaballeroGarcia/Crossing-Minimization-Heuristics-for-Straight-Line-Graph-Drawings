@@ -155,7 +155,7 @@ void GraphVisualizer::render(const Graph& originalGraph, const PlanarizedGraph& 
         for (const auto& [id, pEdge] : planarGraph.edges) {
             const auto& u = planarGraph.nodes.at(pEdge.u_id);
             const auto& v = planarGraph.nodes.at(pEdge.v_id);
-            DrawLineEx({(float)u.x, (float)u.y}, {(float)v.x, (float)v.y}, 2.0f, DARKBLUE);
+            DrawLineEx({(float)u.x, (float)u.y}, {(float)v.x, (float)v.y}, 1.0f, DARKBLUE);
         }
 
         // Draw Nodes

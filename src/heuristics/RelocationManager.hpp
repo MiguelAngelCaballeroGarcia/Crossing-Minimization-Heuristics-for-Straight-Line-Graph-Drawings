@@ -57,6 +57,16 @@ public:
      */
     std::vector<LocalSegment> extractAndClipGeometry(const RegionOfInterest& roi, int variableNodeId);
 
+    /**
+     * @brief Phase 1.4: Appends candidate rays for the variable node inside the ROI.
+     * @param localGeometry Existing local segments (clipped edges + ROI walls).
+     * @param roi The active region of interest.
+     * @param variableNodeId The node being relocated.
+     */
+    void appendRaysToLocalGeometry(std::vector<LocalSegment>& localGeometry,
+                                            const RegionOfInterest& roi,
+                                            int variableNodeId);
+
 private:
     PlanarizedGraph& m_pGraph;
     std::vector<int> m_originalNodeIds;
