@@ -1,0 +1,298 @@
+
+<UNDISECTION>
+	<NODELIST>
+		<NODE>
+			1
+			<EDGE> 1 --
+			<EDGE> 2 --
+		</NODE>
+		<NODE>
+			2
+			<EDGE> 3 --
+		</NODE>
+		<NODE>
+			3
+			<EDGE> 1 --
+			<EDGE> 63 --
+		</NODE>
+		<NODE>
+			4
+			<EDGE> 2 --
+		</NODE>
+		<NODE>
+			5
+			<EDGE> 3 --
+			<EDGE> 4 --
+			<EDGE> 5 --
+		</NODE>
+		<NODE>
+			6
+			<EDGE> 4 --
+		</NODE>
+		<NODE>
+			7
+			<EDGE> 6 --
+		</NODE>
+		<NODE>
+			8
+			<EDGE> 6 --
+			<EDGE> 7 --
+			<EDGE> 8 --
+			<EDGE> 70 --
+		</NODE>
+		<NODE>
+			9
+			<EDGE> 5 --
+			<EDGE> 9 --
+			<EDGE> 48 --
+		</NODE>
+		<NODE>
+			10
+			<EDGE> 10 --
+		</NODE>
+		<NODE>
+			11
+			<EDGE> 7 --
+			<EDGE> 11 --
+			<EDGE> 69 --
+		</NODE>
+		<NODE>
+			12
+			<EDGE> 8 --
+			<EDGE> 12 --
+			<EDGE> 49 --
+		</NODE>
+		<NODE>
+			13
+			<EDGE> 9 --
+			<EDGE> 13 --
+			<EDGE> 14 --
+			<EDGE> 15 --
+			<EDGE> 39 --
+			<EDGE> 61 --
+		</NODE>
+		<NODE>
+			14
+			<EDGE> 39 --
+			<EDGE> 51 --
+		</NODE>
+		<NODE>
+			15
+			<EDGE> 10 --
+			<EDGE> 43 --
+			<EDGE> 52 --
+			<EDGE> 68 --
+		</NODE>
+		<NODE>
+			16
+			<EDGE> 11 --
+			<EDGE> 12 --
+		</NODE>
+		<NODE>
+			17
+			<EDGE> 13 --
+		</NODE>
+		<NODE>
+			18
+			<EDGE> 14 --
+			<EDGE> 42 --
+			<EDGE> 65 --
+		</NODE>
+		<NODE>
+			19
+			<EDGE> 15 --
+			<EDGE> 41 --
+		</NODE>
+		<NODE>
+			20
+			<EDGE> 16 --
+			<EDGE> 17 --
+			<EDGE> 18 --
+			<EDGE> 57 --
+		</NODE>
+		<NODE>
+			21
+			<EDGE> 16 --
+			<EDGE> 19 --
+			<EDGE> 20 --
+			<EDGE> 40 --
+		</NODE>
+		<NODE>
+			22
+			<EDGE> 19 --
+			<EDGE> 21 --
+			<EDGE> 22 --
+			<EDGE> 68 --
+		</NODE>
+		<NODE>
+			23
+			<EDGE> 22 --
+			<EDGE> 54 --
+		</NODE>
+		<NODE>
+			24
+			<EDGE> 20 --
+			<EDGE> 21 --
+			<EDGE> 23 --
+			<EDGE> 28 --
+			<EDGE> 29 --
+			<EDGE> 41 --
+			<EDGE> 42 --
+			<EDGE> 53 --
+		</NODE>
+		<NODE>
+			25
+			<EDGE> 23 --
+		</NODE>
+		<NODE>
+			26
+			<EDGE> 24 --
+			<EDGE> 25 --
+		</NODE>
+		<NODE>
+			27
+			<EDGE> 24 --
+			<EDGE> 26 --
+			<EDGE> 59 --
+			<EDGE> 67 --
+		</NODE>
+		<NODE>
+			28
+			<EDGE> 25 --
+			<EDGE> 27 --
+			<EDGE> 40 --
+		</NODE>
+		<NODE>
+			29
+			<EDGE> 28 --
+			<EDGE> 30 --
+			<EDGE> 49 --
+			<EDGE> 56 --
+		</NODE>
+		<NODE>
+			30
+			<EDGE> 26 --
+			<EDGE> 27 --
+			<EDGE> 50 --
+		</NODE>
+		<NODE>
+			31
+			<EDGE> 17 --
+			<EDGE> 31 --
+		</NODE>
+		<NODE>
+			32
+			<EDGE> 30 --
+			<EDGE> 31 --
+			<EDGE> 32 --
+			<EDGE> 33 --
+			<EDGE> 70 --
+		</NODE>
+		<NODE>
+			33
+			<EDGE> 29 --
+			<EDGE> 34 --
+			<EDGE> 46 --
+		</NODE>
+		<NODE>
+			34
+			<EDGE> 35 --
+			<EDGE> 60 --
+		</NODE>
+		<NODE>
+			35
+			<EDGE> 32 --
+			<EDGE> 36 --
+			<EDGE> 47 --
+			<EDGE> 50 --
+			<EDGE> 66 --
+		</NODE>
+		<NODE>
+			36
+			<EDGE> 18 --
+		</NODE>
+		<NODE>
+			37
+			<EDGE> 34 --
+			<EDGE> 35 --
+			<EDGE> 36 --
+			<EDGE> 55 --
+		</NODE>
+		<NODE>
+			38
+			<EDGE> 33 --
+		</NODE>
+		<NODE>
+			39
+			<EDGE> 37 --
+			<EDGE> 43 --
+		</NODE>
+		<NODE>
+			40
+			<EDGE> 37 --
+			<EDGE> 38 --
+		</NODE>
+		<NODE>
+			41
+			<EDGE> 38 --
+			<EDGE> 44 --
+			<EDGE> 69 --
+		</NODE>
+		<NODE>
+			42
+			<EDGE> 45 --
+		</NODE>
+		<NODE>
+			43
+			<EDGE> 44 --
+			<EDGE> 45 --
+		</NODE>
+		<NODE>
+			44
+			<EDGE> 46 --
+			<EDGE> 47 --
+			<EDGE> 48 --
+		</NODE>
+		<NODE>
+			45
+			<EDGE> 51 --
+			<EDGE> 52 --
+			<EDGE> 53 --
+			<EDGE> 56 --
+		</NODE>
+		<NODE>
+			46
+			<EDGE> 54 --
+			<EDGE> 58 --
+		</NODE>
+		<NODE>
+			47
+			<EDGE> 55 --
+			<EDGE> 62 --
+			<EDGE> 63 --
+		</NODE>
+		<NODE>
+			48
+			<EDGE> 57 --
+			<EDGE> 58 --
+		</NODE>
+		<NODE>
+			49
+			<EDGE> 59 --
+			<EDGE> 60 --
+			<EDGE> 61 --
+			<EDGE> 62 --
+			<EDGE> 64 --
+		</NODE>
+		<NODE>
+			50
+			<EDGE> 64 --
+			<EDGE> 65 --
+		</NODE>
+		<NODE>
+			51
+			<EDGE> 66 --
+			<EDGE> 67 --
+		</NODE>
+	</NODELIST>
+</UNDISECTION>

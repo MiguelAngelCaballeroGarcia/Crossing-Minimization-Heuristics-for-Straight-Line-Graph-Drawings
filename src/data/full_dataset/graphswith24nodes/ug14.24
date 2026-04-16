@@ -1,0 +1,127 @@
+
+<UNDISECTION>
+	<NODELIST>
+		<NODE>
+			1
+			<EDGE> 2 --
+			<EDGE> 14 --
+			<EDGE> 15 --
+			<EDGE> 16 --
+			<EDGE> 17 --
+		</NODE>
+		<NODE>
+			2
+			<EDGE> 7 --
+			<EDGE> 14 --
+		</NODE>
+		<NODE>
+			3
+			<EDGE> 15 --
+		</NODE>
+		<NODE>
+			4
+			<EDGE> 9 --
+			<EDGE> 16 --
+			<EDGE> 18 --
+			<EDGE> 19 --
+		</NODE>
+		<NODE>
+			5
+			<EDGE> 17 --
+		</NODE>
+		<NODE>
+			6
+			<EDGE> 11 --
+			<EDGE> 19 --
+		</NODE>
+		<NODE>
+			7
+			<EDGE> 18 --
+		</NODE>
+		<NODE>
+			8
+			<EDGE> 1 --
+			<EDGE> 4 --
+		</NODE>
+		<NODE>
+			9
+			<EDGE> 5 --
+			<EDGE> 6 --
+			<EDGE> 8 --
+		</NODE>
+		<NODE>
+			10
+			<EDGE> 3 --
+			<EDGE> 20 --
+			<EDGE> 22 --
+			<EDGE> 23 --
+			<EDGE> 24 --
+		</NODE>
+		<NODE>
+			11
+			<EDGE> 20 --
+			<EDGE> 21 --
+		</NODE>
+		<NODE>
+			12
+			<EDGE> 12 --
+			<EDGE> 22 --
+		</NODE>
+		<NODE>
+			13
+			<EDGE> 23 --
+		</NODE>
+		<NODE>
+			14
+			<EDGE> 24 --
+		</NODE>
+		<NODE>
+			15
+			<EDGE> 10 --
+			<EDGE> 13 --
+		</NODE>
+		<NODE>
+			16
+			<EDGE> 21 --
+		</NODE>
+		<NODE>
+			17
+			<EDGE> 1 --
+			<EDGE> 2 --
+		</NODE>
+		<NODE>
+			18
+			<EDGE> 3 --
+			<EDGE> 4 --
+		</NODE>
+		<NODE>
+			19
+			<EDGE> 6 --
+			<EDGE> 7 --
+		</NODE>
+		<NODE>
+			20
+			<EDGE> 8 --
+			<EDGE> 9 --
+			<EDGE> 25 --
+		</NODE>
+		<NODE>
+			21
+			<EDGE> 25 --
+		</NODE>
+		<NODE>
+			22
+			<EDGE> 10 --
+			<EDGE> 11 --
+		</NODE>
+		<NODE>
+			23
+			<EDGE> 12 --
+			<EDGE> 13 --
+		</NODE>
+		<NODE>
+			24
+			<EDGE> 5 --
+		</NODE>
+	</NODELIST>
+</UNDISECTION>
