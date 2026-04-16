@@ -1,4 +1,10 @@
 *.o
+*.obj
+*.ilk
+*.pdb
+*.idb
+*.ipdb
+*.iobj
 *.exe
 /build/
 /bin/
