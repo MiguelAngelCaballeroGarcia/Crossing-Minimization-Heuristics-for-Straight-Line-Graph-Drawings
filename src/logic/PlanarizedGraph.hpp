@@ -1,7 +1,7 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
-#include <unordered_map>
 #include "Graph.hpp" // Your original graph
 #include "SpatialGrid.hpp" // For spatial indexing and incremental updates
 
@@ -11,6 +11,8 @@ private:
 
     int nextNodeId = 0;
     int nextEdgeId = 0;
+    std::vector<int> freeNodeIds;
+    std::vector<int> freeEdgeIds;
 
     // Helper to safely swap a neighbor pointer in either an ORIGINAL or CROSSING node
     void updateNodeNeighbor(int nodeId, int oldNeighbor, int newNeighbor, int origEdgeId);
@@ -21,6 +23,12 @@ private:
 
     // Math helper for createCrossing
     bool isPointOnSegment(double px, double py, int u_id, int v_id);
+
+    void ensureNodeCapacity(int id);
+    void ensureEdgeCapacity(int id);
+    void ensureOriginalEdgeCapacity(int id);
+    void deactivateNode(int id);
+    void deactivateEdge(int id);
 public:
     struct IntersectionData {
         double x, y;
@@ -34,8 +42,8 @@ public:
 
     PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections);
 
-    int getNextEdgeId() { return nextEdgeId++; }
-    int getNextNodeId() { return nextNodeId++; }
+    int getNextEdgeId();
+    int getNextNodeId();
 
     enum class NodeType { ORIGINAL, CROSSING };
 
@@ -43,6 +51,7 @@ public:
         int id;
         double x, y;
         NodeType type;
+        std::vector<int> incident_planar_edges;
         
         // For ORIGINAL nodes:
         int original_node_id = -1;
@@ -69,14 +78,61 @@ public:
     };
 
     // Fast lookup: Original Edge ID -> List of Planar Edge IDs (its sub-segments)
-    std::unordered_map<int, std::vector<int>> originalEdgeToPlanarEdges;
+    std::vector<std::vector<int>> originalEdgeToPlanarEdges;
 
-    std::unordered_map<int, PlanarNode> nodes;
-    std::unordered_map<int, PlanarEdge> edges;
+    std::vector<PlanarNode> nodes;
+    std::vector<std::uint8_t> nodeActive;
+    std::vector<PlanarEdge> edges;
+    std::vector<std::uint8_t> edgeActive;
+
+    bool hasNode(int nodeId) const;
+    bool hasEdge(int edgeId) const;
+    PlanarNode& getNode(int nodeId);
+    const PlanarNode& getNode(int nodeId) const;
+    PlanarEdge& getEdge(int edgeId);
+    const PlanarEdge& getEdge(int edgeId) const;
+
+    template <typename Func>
+    void forEachNode(Func&& fn) {
+        for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
+            if (nodeActive[i] == 0) continue;
+            fn(i, nodes[i]);
+        }
+    }
+
+    template <typename Func>
+    void forEachNode(Func&& fn) const {
+        for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
+            if (nodeActive[i] == 0) continue;
+            fn(i, nodes[i]);
+        }
+    }
+
+    template <typename Func>
+    void forEachEdge(Func&& fn) {
+        for (int i = 0; i < static_cast<int>(edges.size()); ++i) {
+            if (edgeActive[i] == 0) continue;
+            fn(i, edges[i]);
+        }
+    }
+
+    template <typename Func>
+    void forEachEdge(Func&& fn) const {
+        for (int i = 0; i < static_cast<int>(edges.size()); ++i) {
+            if (edgeActive[i] == 0) continue;
+            fn(i, edges[i]);
+        }
+    }
 
     // Helper to find where a crossing sits between two nodes on an edge
     void insertCrossingIntoEdgeChain(int edgeId, int crossingNodeIdx);
     
     void destroyCrossing(int crossingNodeIdx);
     void createCrossing(int edge1Id, int edge2Id, double x, double y);
+
+    // Moves a node and updates grid occupancy for both node and incident planar edges.
+    void updateNodePosition(int nodeId, double newX, double newY);
+
+    // Count total crossing nodes in the graph
+    int countTotalCrossings() const;
 };

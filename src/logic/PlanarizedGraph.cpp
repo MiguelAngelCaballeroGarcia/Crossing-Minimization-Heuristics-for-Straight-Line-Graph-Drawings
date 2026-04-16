@@ -3,8 +3,108 @@
 #include <cmath>
 #include <limits>
 
+namespace {
+
+constexpr double kIntersectionEpsilon = 1e-9;
+
+} // namespace
+
+void PlanarizedGraph::ensureNodeCapacity(int id) {
+    if (id < 0) return;
+    if (id >= static_cast<int>(nodes.size())) {
+        nodes.resize(id + 1);
+        nodeActive.resize(id + 1, 0);
+    }
+}
+
+void PlanarizedGraph::ensureEdgeCapacity(int id) {
+    if (id < 0) return;
+    if (id >= static_cast<int>(edges.size())) {
+        edges.resize(id + 1);
+        edgeActive.resize(id + 1, 0);
+    }
+}
+
+void PlanarizedGraph::ensureOriginalEdgeCapacity(int id) {
+    if (id < 0) return;
+    if (id >= static_cast<int>(originalEdgeToPlanarEdges.size())) {
+        originalEdgeToPlanarEdges.resize(id + 1);
+    }
+}
+
+void PlanarizedGraph::deactivateNode(int id) {
+    if (!hasNode(id)) return;
+    nodeActive[id] = 0;
+    freeNodeIds.push_back(id);
+}
+
+void PlanarizedGraph::deactivateEdge(int id) {
+    if (!hasEdge(id)) return;
+    edgeActive[id] = 0;
+    freeEdgeIds.push_back(id);
+}
+
+int PlanarizedGraph::getNextNodeId() {
+    int id;
+    if (!freeNodeIds.empty()) {
+        id = freeNodeIds.back();
+        freeNodeIds.pop_back();
+    } else {
+        id = nextNodeId++;
+    }
+
+    ensureNodeCapacity(id);
+    nodes[id] = PlanarNode{};
+    nodes[id].id = id;
+    nodeActive[id] = 1;
+    return id;
+}
+
+int PlanarizedGraph::getNextEdgeId() {
+    if (!freeEdgeIds.empty()) {
+        const int id = freeEdgeIds.back();
+        freeEdgeIds.pop_back();
+        ensureEdgeCapacity(id);
+        edgeActive[id] = 1;
+        return id;
+    }
+
+    const int id = nextEdgeId++;
+    ensureEdgeCapacity(id);
+    edgeActive[id] = 1;
+    return id;
+}
+
+bool PlanarizedGraph::hasNode(int nodeId) const {
+    return nodeId >= 0 && nodeId < static_cast<int>(nodeActive.size()) && nodeActive[nodeId] != 0;
+}
+
+bool PlanarizedGraph::hasEdge(int edgeId) const {
+    return edgeId >= 0 && edgeId < static_cast<int>(edgeActive.size()) && edgeActive[edgeId] != 0;
+}
+
+PlanarizedGraph::PlanarNode& PlanarizedGraph::getNode(int nodeId) {
+    return nodes[nodeId];
+}
+
+const PlanarizedGraph::PlanarNode& PlanarizedGraph::getNode(int nodeId) const {
+    return nodes[nodeId];
+}
+
+PlanarizedGraph::PlanarEdge& PlanarizedGraph::getEdge(int edgeId) {
+    return edges[edgeId];
+}
+
+const PlanarizedGraph::PlanarEdge& PlanarizedGraph::getEdge(int edgeId) const {
+    return edges[edgeId];
+}
+
 PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<IntersectionData>& intersections) {
-    
+    const int totalExpectedNodes = static_cast<int>(originalGraph.nodes.size() + intersections.size());
+    const int totalExpectedEdges = static_cast<int>(originalGraph.edges.size() + (2 * intersections.size()));
+
+    int maxOrigNodeId = -1;
+
     // 1. Calculate boundaries to initialize the grid
     double minX = std::numeric_limits<double>::max();
     double minY = std::numeric_limits<double>::max();
@@ -16,35 +116,53 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
         if (node.x > maxX) maxX = node.x;
         if (node.y < minY) minY = node.y;
         if (node.y > maxY) maxY = node.y;
+        if (node.id > maxOrigNodeId) maxOrigNodeId = node.id;
     }
 
+    const int initialNodeSlots = std::max(totalExpectedNodes, maxOrigNodeId + 1 + static_cast<int>(intersections.size()));
+    nodes.resize(initialNodeSlots);
+    nodeActive.resize(initialNodeSlots, 0);
+
+    edges.reserve(totalExpectedEdges);
+    edgeActive.reserve(totalExpectedEdges);
+
     // Initialize the member grid with actual dimensions
-    int totalExpectedNodes = originalGraph.nodes.size() + intersections.size();
     grid = SpatialGrid(minX, maxX, minY, maxY, totalExpectedNodes);
 
     // 2. Map ORIGINAL nodes
-    int maxOrigNodeId = -1;
     for (const auto& origNode : originalGraph.nodes) {
         PlanarNode pNode;
         pNode.id = origNode.id; pNode.x = origNode.x; pNode.y = origNode.y;
         pNode.type = NodeType::ORIGINAL;
         pNode.original_node_id = origNode.id;
-        
+
+        ensureNodeCapacity(pNode.id);
         nodes[pNode.id] = pNode;
+        nodeActive[pNode.id] = 1;
         grid.insertNode(pNode.id, pNode.x, pNode.y); // <-- Sync to grid
-        
-        if (origNode.id > maxOrigNodeId) maxOrigNodeId = origNode.id;
     }
     
     nextNodeId = maxOrigNodeId + 1;
+
+    int maxOrigEdgeId = -1;
+    for (const auto& origEdge : originalGraph.edges) {
+        if (origEdge.id > maxOrigEdgeId) maxOrigEdgeId = origEdge.id;
+    }
+    for (const auto& ix : intersections) {
+        if (ix.edge1_id > maxOrigEdgeId) maxOrigEdgeId = ix.edge1_id;
+        if (ix.edge2_id > maxOrigEdgeId) maxOrigEdgeId = ix.edge2_id;
+    }
+    if (maxOrigEdgeId >= 0) {
+        ensureOriginalEdgeCapacity(maxOrigEdgeId);
+    }
     
     // 3. Setup Sort-by-t Buckets
-    std::unordered_map<int, std::vector<std::pair<double, int>>> edgeBuckets;
+    std::vector<std::vector<std::pair<double, int>>> edgeBuckets(originalEdgeToPlanarEdges.size());
     for (const auto& origEdge : originalGraph.edges) {
         // origEdge.u_id is the index. We need originalGraph.nodes[index].id
         int actual_U_ID = originalGraph.nodes[origEdge.u_id].id;
         int actual_V_ID = originalGraph.nodes[origEdge.v_id].id;
-        
+
         edgeBuckets[origEdge.id].push_back({0.0, actual_U_ID});
         edgeBuckets[origEdge.id].push_back({1.0, actual_V_ID});
     }
@@ -58,18 +176,24 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
         cNode.type = NodeType::CROSSING;
         cNode.original_edge_1 = ix.edge1_id;
         cNode.original_edge_2 = ix.edge2_id;
-        
+
         nodes[cId] = cNode;
         grid.insertNode(cId, cNode.x, cNode.y); // <-- Sync to grid
         
+        ensureOriginalEdgeCapacity(ix.edge1_id);
+        ensureOriginalEdgeCapacity(ix.edge2_id);
+        if (edgeBuckets.size() < originalEdgeToPlanarEdges.size()) {
+            edgeBuckets.resize(originalEdgeToPlanarEdges.size());
+        }
+
         edgeBuckets[ix.edge1_id].push_back({ix.t1, cId});
         edgeBuckets[ix.edge2_id].push_back({ix.t2, cId});
     }
     
     // 5. Stitch Edges (addPlanarEdge will handle grid insertion automatically)
-    for (auto& pair : edgeBuckets) {
-        int origEdgeId = pair.first;
-        auto& bucket = pair.second;
+    for (int origEdgeId = 0; origEdgeId < static_cast<int>(edgeBuckets.size()); ++origEdgeId) {
+        auto& bucket = edgeBuckets[origEdgeId];
+        if (bucket.size() < 2) continue;
         
         std::sort(bucket.begin(), bucket.end());
         
@@ -80,14 +204,14 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
             addPlanarEdge(nodeA_id, nodeB_id, origEdgeId); // Grid updated inside here!
             
             // ... (Your exact same logic for linking Node A and Node B pointers) ...
-            PlanarNode& nodeA = nodes[nodeA_id];
+            PlanarNode& nodeA = getNode(nodeA_id);
             if (nodeA.type == NodeType::ORIGINAL) nodeA.adjacent_planar_nodes.push_back(nodeB_id);
             else {
                 if (nodeA.original_edge_1 == origEdgeId) nodeA.e1_neighbor_next = nodeB_id;
                 else if (nodeA.original_edge_2 == origEdgeId) nodeA.e2_neighbor_next = nodeB_id;
             }
             
-            PlanarNode& nodeB = nodes[nodeB_id];
+            PlanarNode& nodeB = getNode(nodeB_id);
             if (nodeB.type == NodeType::ORIGINAL) nodeB.adjacent_planar_nodes.push_back(nodeA_id);
             else {
                 if (nodeB.original_edge_1 == origEdgeId) nodeB.e1_neighbor_prev = nodeA_id;
@@ -102,28 +226,46 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
 void PlanarizedGraph::addPlanarEdge(int u_id, int v_id, int origEdgeId) {
     int newId = getNextEdgeId();
     edges[newId] = {newId, u_id, v_id, origEdgeId};
+    ensureOriginalEdgeCapacity(origEdgeId);
     originalEdgeToPlanarEdges[origEdgeId].push_back(newId);
+    getNode(u_id).incident_planar_edges.push_back(newId);
+    getNode(v_id).incident_planar_edges.push_back(newId);
 
     // Automatically sync the new sub-segment to the spatial grid
-    PlanarNode& u = nodes[u_id];
-    PlanarNode& v = nodes[v_id];
+    PlanarNode& u = getNode(u_id);
+    PlanarNode& v = getNode(v_id);
     grid.insertEdge(newId, u.x, u.y, v.x, v.y); 
 }
 
 void PlanarizedGraph::removePlanarEdge(int u_id, int v_id, int origEdgeId) {
+    if (origEdgeId < 0 || origEdgeId >= static_cast<int>(originalEdgeToPlanarEdges.size())) return;
+
     auto& subEdges = originalEdgeToPlanarEdges[origEdgeId];
     for (auto it = subEdges.begin(); it != subEdges.end(); ++it) {
-        PlanarEdge& pe = edges[*it];
+        if (!hasEdge(*it)) continue;
+        PlanarEdge& pe = getEdge(*it);
         if ((pe.u_id == u_id && pe.v_id == v_id) || (pe.u_id == v_id && pe.v_id == u_id)) {
             int edgeIdToDelete = *it;
+
+            auto removeFast = [](std::vector<int>& vec, int val) {
+                auto found = std::find(vec.begin(), vec.end(), val);
+                if (found != vec.end()) {
+                    *found = vec.back();
+                    vec.pop_back();
+                }
+            };
+
+            removeFast(getNode(pe.u_id).incident_planar_edges, edgeIdToDelete);
+            removeFast(getNode(pe.v_id).incident_planar_edges, edgeIdToDelete);
             
             // Automatically remove the sub-segment from the spatial grid
-            PlanarNode& u = nodes[pe.u_id];
-            PlanarNode& v = nodes[pe.v_id];
+            PlanarNode& u = getNode(pe.u_id);
+            PlanarNode& v = getNode(pe.v_id);
             grid.removeEdge(edgeIdToDelete, u.x, u.y, v.x, v.y);
 
-            edges.erase(edgeIdToDelete);
-            subEdges.erase(it);
+            deactivateEdge(edgeIdToDelete);
+            *it = subEdges.back();
+            subEdges.pop_back();
             break; 
         }
     }
@@ -132,61 +274,102 @@ void PlanarizedGraph::removePlanarEdge(int u_id, int v_id, int origEdgeId) {
 // ------------------------------------
 
 void PlanarizedGraph::destroyCrossing(int crossingNodeIdx) {
-    PlanarNode& cNode = nodes[crossingNodeIdx];
+    if (!hasNode(crossingNodeIdx)) return;
+    PlanarNode& cNode = getNode(crossingNodeIdx);
 
     // (Your exact healing logic...)
     int e1 = cNode.original_edge_1;
     int prev1 = cNode.e1_neighbor_prev;
     int next1 = cNode.e1_neighbor_next;
-    updateNodeNeighbor(prev1, crossingNodeIdx, next1, e1);
-    updateNodeNeighbor(next1, crossingNodeIdx, prev1, e1);
-    removePlanarEdge(prev1, crossingNodeIdx, e1); // Grid syncs automatically!
-    removePlanarEdge(crossingNodeIdx, next1, e1);
-    addPlanarEdge(prev1, next1, e1);              // Grid syncs automatically!
+    if (hasNode(prev1) && hasNode(next1)) {
+        updateNodeNeighbor(prev1, crossingNodeIdx, next1, e1);
+        updateNodeNeighbor(next1, crossingNodeIdx, prev1, e1);
+        removePlanarEdge(prev1, crossingNodeIdx, e1); // Grid syncs automatically!
+        removePlanarEdge(crossingNodeIdx, next1, e1);
+        addPlanarEdge(prev1, next1, e1);              // Grid syncs automatically!
+    }
 
     int e2 = cNode.original_edge_2;
     int prev2 = cNode.e2_neighbor_prev;
     int next2 = cNode.e2_neighbor_next;
-    updateNodeNeighbor(prev2, crossingNodeIdx, next2, e2);
-    updateNodeNeighbor(next2, crossingNodeIdx, prev2, e2);
-    removePlanarEdge(prev2, crossingNodeIdx, e2);
-    removePlanarEdge(crossingNodeIdx, next2, e2);
-    addPlanarEdge(prev2, next2, e2);
+    if (hasNode(prev2) && hasNode(next2)) {
+        updateNodeNeighbor(prev2, crossingNodeIdx, next2, e2);
+        updateNodeNeighbor(next2, crossingNodeIdx, prev2, e2);
+        removePlanarEdge(prev2, crossingNodeIdx, e2);
+        removePlanarEdge(crossingNodeIdx, next2, e2);
+        addPlanarEdge(prev2, next2, e2);
+    }
 
     // Sync node removal to grid, then delete from graph
     grid.removeNode(crossingNodeIdx, cNode.x, cNode.y); 
-    nodes.erase(crossingNodeIdx); 
+    deactivateNode(crossingNodeIdx);
 }
 
 void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double y) {
     int cId = getNextNodeId();
-    
-    PlanarNode cNode;
-    cNode.id = cId; cNode.x = x; cNode.y = y;
-    cNode.type = NodeType::CROSSING;
-    cNode.original_edge_1 = edge1Id;
-    cNode.original_edge_2 = edge2Id;
 
+    PlanarNode& storedNode = nodes[cId];
+    storedNode = PlanarNode{};
+    storedNode.id = cId;
+    storedNode.x = x;
+    storedNode.y = y;
+    storedNode.type = NodeType::CROSSING;
+    storedNode.original_edge_1 = edge1Id;
+    storedNode.original_edge_2 = edge2Id;
+    grid.insertNode(cId, x, y);
+
+    struct EdgeSplitTarget {
+        int edgeId;
+        int u;
+        int v;
+    };
+
+    std::vector<EdgeSplitTarget> targets;
+    targets.reserve(2);
     int affectedEdges[2] = {edge1Id, edge2Id};
 
     for (int eId : affectedEdges) {
-        int targetEdgeId = -1;
-        int u = -1, v = -1;
+        if (eId < 0 || eId >= static_cast<int>(originalEdgeToPlanarEdges.size())) {
+            grid.removeNode(cId, x, y);
+            deactivateNode(cId);
+            return;
+        }
+
+        int u = -1;
+        int v = -1;
+        bool found = false;
 
         for (int pEdgeId : originalEdgeToPlanarEdges[eId]) {
-            PlanarEdge& pe = edges[pEdgeId];
+            if (!hasEdge(pEdgeId)) continue;
+            PlanarEdge& pe = getEdge(pEdgeId);
             if (isPointOnSegment(x, y, pe.u_id, pe.v_id)) {
-                targetEdgeId = pEdgeId;
-                u = pe.u_id; v = pe.v_id;
-                break; 
+                u = pe.u_id;
+                v = pe.v_id;
+                found = true;
+                break;
             }
         }
-        if (targetEdgeId == -1) continue; 
+
+        if (!found) {
+            grid.removeNode(cId, x, y);
+            deactivateNode(cId);
+            return;
+        }
+
+        targets.push_back({eId, u, v});
+    }
+
+    for (const auto& target : targets) {
+        const int eId = target.edgeId;
+        const int u = target.u;
+        const int v = target.v;
 
         if (eId == edge1Id) {
-            cNode.e1_neighbor_prev = u; cNode.e1_neighbor_next = v;
+            storedNode.e1_neighbor_prev = u;
+            storedNode.e1_neighbor_next = v;
         } else {
-            cNode.e2_neighbor_prev = u; cNode.e2_neighbor_next = v;
+            storedNode.e2_neighbor_prev = u;
+            storedNode.e2_neighbor_next = v;
         }
 
         updateNodeNeighbor(u, v, cId, eId);
@@ -196,14 +379,12 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
         addPlanarEdge(u, cId, eId);    // Grid syncs automatically!
         addPlanarEdge(cId, v, eId);    // Grid syncs automatically!
     }
-
-    nodes[cId] = cNode;
-    grid.insertNode(cId, cNode.x, cNode.y); // Sync node creation to grid
 }
 
 
 void PlanarizedGraph::updateNodeNeighbor(int nodeId, int oldNeighbor, int newNeighbor, int origEdgeId) {
-    PlanarNode& node = nodes[nodeId];
+    if (!hasNode(nodeId)) return;
+    PlanarNode& node = getNode(nodeId);
 
     if (node.type == NodeType::ORIGINAL) {
         // For original nodes, we just replace the ID in the adjacency list
@@ -226,21 +407,83 @@ void PlanarizedGraph::updateNodeNeighbor(int nodeId, int oldNeighbor, int newNei
     }
 }
 
-// Math helper: Checks if (px, py) lies within the bounding box of segment u-v
 bool PlanarizedGraph::isPointOnSegment(double px, double py, int u_id, int v_id) {
-    PlanarNode& u = nodes[u_id];
-    PlanarNode& v = nodes[v_id];
-    
-    // We add a tiny epsilon (1e-7) because floating point math is never perfect.
-    // Since (px, py) is an intersection point, it is mathematically guaranteed to be on the line,
-    // so we only need to check if it's "between" the endpoints.
-    double epsilon = 1e-7;
-    bool inX = px >= std::min(u.x, v.x) - epsilon && px <= std::max(u.x, v.x) + epsilon;
-    bool inY = py >= std::min(u.y, v.y) - epsilon && py <= std::max(u.y, v.y) + epsilon;
-    
-    return inX && inY;
+    PlanarNode& u = getNode(u_id);
+    PlanarNode& v = getNode(v_id);
+
+    const double dx = v.x - u.x;
+    const double dy = v.y - u.y;
+    const double squaredLength = dx * dx + dy * dy;
+
+    if (squaredLength < kIntersectionEpsilon * kIntersectionEpsilon) {
+        const double ddx = px - u.x;
+        const double ddy = py - u.y;
+        return (ddx * ddx + ddy * ddy) <= (kIntersectionEpsilon * kIntersectionEpsilon);
+    }
+
+    // Keep the same absolute tolerance as the spatial grid layer so crossing tests agree.
+    const double crossProduct = std::abs((px - u.x) * dy - (py - u.y) * dx);
+    const double distanceToLine = crossProduct / std::sqrt(squaredLength);
+    if (distanceToLine > kIntersectionEpsilon) {
+        return false;
+    }
+
+    // Check projection is inside segment extents with the same tolerance.
+    const double dotProduct = (px - u.x) * dx + (py - u.y) * dy;
+    const double eps = kIntersectionEpsilon * squaredLength;
+    if (dotProduct < -eps) return false;
+    if (dotProduct > squaredLength + eps) return false;
+
+    return true;
 }
 
 const SpatialGrid& PlanarizedGraph::getGrid() const {
     return grid;
+}
+
+void PlanarizedGraph::updateNodePosition(int nodeId, double newX, double newY) {
+    if (!hasNode(nodeId)) return;
+
+    auto& node = getNode(nodeId);
+    const double oldX = node.x;
+    const double oldY = node.y;
+
+    const std::vector<int>& incidentEdges = node.incident_planar_edges;
+
+    for (int edgeId : incidentEdges) {
+        if (!hasEdge(edgeId)) continue;
+
+        const auto& edge = getEdge(edgeId);
+        const auto& uNode = getNode(edge.u_id);
+        const auto& vNode = getNode(edge.v_id);
+
+        const double x1 = (edge.u_id == nodeId) ? oldX : uNode.x;
+        const double y1 = (edge.u_id == nodeId) ? oldY : uNode.y;
+        const double x2 = (edge.v_id == nodeId) ? oldX : vNode.x;
+        const double y2 = (edge.v_id == nodeId) ? oldY : vNode.y;
+
+        grid.removeEdge(edgeId, x1, y1, x2, y2);
+    }
+
+    grid.removeNode(nodeId, oldX, oldY);
+    node.x = newX;
+    node.y = newY;
+    grid.insertNode(nodeId, newX, newY);
+
+    for (int edgeId : incidentEdges) {
+        if (!hasEdge(edgeId)) continue;
+
+        const auto& edge = getEdge(edgeId);
+        const auto& uNode = getNode(edge.u_id);
+        const auto& vNode = getNode(edge.v_id);
+        grid.insertEdge(edgeId, uNode.x, uNode.y, vNode.x, vNode.y);
+    }
+}
+
+int PlanarizedGraph::countTotalCrossings() const {
+    int count = 0;
+    forEachNode([&count](int, const PlanarNode& node) {
+        if (node.type == NodeType::CROSSING) ++count;
+    });
+    return count;
 }
