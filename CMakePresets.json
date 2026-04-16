@@ -10,6 +10,68 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "CMAKE_BUILD_TYPE": "Debug"
       }
+    },
+    {
+      "name": "x64-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/x64-release",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MINIMIZACIONCORTES_ENABLE_NATIVE_OPTIMIZATIONS": "OFF",
+        "MINIMIZACIONCORTES_ALLOW_FETCHCONTENT": "ON"
+      }
+    },
+    {
+      "name": "linux-release-portable",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-release-portable",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MINIMIZACIONCORTES_ENABLE_NATIVE_OPTIMIZATIONS": "OFF",
+        "MINIMIZACIONCORTES_ALLOW_FETCHCONTENT": "ON"
+      }
+    },
+    {
+      "name": "linux-release-native",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-release-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MINIMIZACIONCORTES_ENABLE_NATIVE_OPTIMIZATIONS": "ON",
+        "MINIMIZACIONCORTES_ALLOW_FETCHCONTENT": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-debug",
+      "configurePreset": "x64-debug"
+    },
+    {
+      "name": "x64-release",
+      "configurePreset": "x64-release"
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-release-portable",
+      "configurePreset": "linux-release-portable"
+    },
+    {
+      "name": "linux-release-native",
+      "configurePreset": "linux-release-native"
     }
   ]
 }
