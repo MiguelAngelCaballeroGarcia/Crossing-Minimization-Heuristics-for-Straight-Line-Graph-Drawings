@@ -24,36 +24,61 @@ The long-term objective is a fully automated iterative solver for node relocatio
 - `RelocationManager` (`src/logic`): **(New)** Orchestrates local node movement and ROI calculations.
 - `GraphVisualizer` (`src/visualization`): Real-time inspection of graphs and grid layers.
 
-## Algorithm Roadmap
+## Implementation Status by Phase
 
 ### Phase 1: Local Context Extraction (ROI)
-1. **Neighbor-Based Bounding:** Implement logic to identify the relocation **Region of Interest (ROI)** by calculating the minimal square in the `SpatialGrid` covering a node and all its immediate neighbors.
-2. **Cell Freezing:** Logic to isolate specific `SpatialGrid` cells within the ROI for localized study.
-3. **Geometric Extraction:**
-   - Extract all `PlanarEdges` currently occupying the frozen cells ("Static Walls").
-   - Implement "Ray Emission": Generate rays from all nodes within the ROI (excluding the variable node) to define potential subdivision boundaries.
+
+**Implemented**
+- Neighbor-based ROI bounding from selected node and its neighbors.
+- ROI-bounded geometry extraction and clipping.
+- ROI border insertion as local boundary segments.
+- Ray emission for local subdivision candidates.
+
+**Not Implemented / Partial**
+- No separate explicit "cell freezing" subsystem; behavior is effectively achieved through ROI-bounded cell iteration.
 
 ### Phase 2: Region Study and Topology Construction
-1. **Geometric Structure Analysis:** Analyze intersections between extracted `PlanarEdges` and emitted rays within the ROI boundaries.
-2. **Region/Face Construction:** Identify discrete geometric regions formed by the intersection of walls and rays.
-3. **Dual Graph Mapping:** - Represent each region as a node in a `DualGraph`.
-   - Connect adjacent regions with dual edges, weighted by the crossing cost of the boundary.
+
+**Implemented**
+- Segment splitting at local intersections.
+- Face extraction from local arrangement.
+- Dual graph construction over inner faces.
+- Local analysis pipeline that builds and consumes the dual graph.
+
+**Not Implemented / Partial**
+- No major missing item relative to this phase definition.
 
 ### Phase 3: Selection and Relocation Update
-1. **Best Region Selection:** Search the `DualGraph` for the region that minimizes the objective function (crossing count).
-2. **Atomic Relocation Transaction:**
-   - Update physical coordinates of the selected ORIGINAL node.
-   - Remove old planar edges/crossings and re-insert new ones via `PlanarizedGraph` helpers.
-   - Synchronize `SpatialGrid` indices for the node and its new incident edges.
+
+**Implemented**
+- Candidate face selection logic.
+- Crossing update plan construction (disappearing/appearing crossing pairs).
+- Crossing removal/insertion application.
+- Atomic relocation step (move node + reconcile affected crossings).
+- Exact per-face global crossing delta evaluation is available.
+
+**Not Implemented / Partial**
+- Target selection is still driven primarily by local weight minimization; exact global crossing delta is computed but not yet the primary selection criterion.
 
 ### Phase 4: Automated Optimization Loop
-1. **Iteration Engine:** Wrap the relocation logic in an automated solver that iterates through nodes.
-2. **Stochastic Jumping:** Implement a probability-based acceptance logic (Simulated Annealing) to allow moves to "worse" positions, preventing local minima entrapment.
-3. **Convergence Policies:** Define exit conditions based on crossing thresholds or iteration caps.
 
-### Phase 5: Observer and Debug Mode (Secondary)
-1. **Visual Debugging:** Extend `GraphVisualizer` to render the ROI bounding box, extracted local walls, and candidate regions.
-2. **Performance Telemetry:** Track total crossing reduction, iterations per second, and spatial query timings.
+**Implemented**
+- Batch iteration loop exists in visualization mode and repeatedly executes relocation steps.
+
+**Not Implemented / Partial**
+- No simulated annealing acceptance schedule found.
+- No explicit convergence policy framework (for example crossing-threshold stop logic or dedicated iteration policy object).
+- No standalone non-visual optimizer engine; current iteration loop is UI-driven.
+
+### Phase 5: Observer and Debug Mode
+
+**Implemented**
+- ROI overlay rendering.
+- Dual-graph debug panel rendering.
+- Batch timing and crossing diagnostics shown in UI/console.
+
+**Not Implemented / Partial**
+- No structured telemetry pipeline (for example persisted experiment metrics format); current telemetry is mainly UI/console output.
 
 ## Build and Run
 
@@ -64,6 +89,7 @@ The long-term objective is a fully automated iterative solver for node relocatio
 
 ### Setup & Execute
 ```powershell
-cmake --preset x64-debug
-cmake --build --preset x64-debug
-.\build\x64-debug\MinimizacionCortes.exe
+cmake --preset x64-release
+cmake --build --preset x64-release
+.\build\x64-release\MinimizacionCortes.exe
+```

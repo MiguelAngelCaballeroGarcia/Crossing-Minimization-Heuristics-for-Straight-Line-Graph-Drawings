@@ -1,16 +1,16 @@
 *.o
+*.obj
+*.ilk
+*.pdb
+*.idb
+*.ipdb
+*.iobj
 *.exe
 /build/
 /bin/
 .vscode/
 .DS_Store
-
-# Ignore the full dataset inside the src folder
-src/data/full_dataset/
-
-# Alternatively, a more global approach:
-# Ignore any folder named full_dataset regardless of where it is
-**/full_dataset/
+src/batch_results.csv
 
 # Ensure samples are always included
 !src/data/samples/

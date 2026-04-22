@@ -7,10 +7,6 @@
 #include <cmath>
 #include <algorithm>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 bool GraphLoader::loadFromRomeXML(const std::string& filepath, Graph& g) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -65,28 +61,40 @@ bool GraphLoader::loadFromRomeXML(const std::string& filepath, Graph& g) {
     }
     file.close();
 
-    // --- PASS 2: Populate the Graph with a Circle Layout ---
+    // --- PASS 2: Populate the Graph with a Spiral Layout ---
     int numNodes = parsedNodes.size();
     if (numNodes == 0) {
         std::cerr << "GraphLoader Error: No nodes found in file." << std::endl;
         return false;
     }
 
-    // Dynamically scale the circle radius so larger graphs have more room
-    double radius = std::max(200.0, numNodes * 15.0); 
-    double centerX = radius + 100.0;
-    double centerY = radius + 100.0;
+    int columns = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(numNodes))));
+    int rows = static_cast<int>(std::ceil(static_cast<double>(numNodes) / columns));
+    double spacingX = 90.0;
+    double spacingY = 90.0;
+    double startX = 100.0;
+    double startY = 100.0;
+    double layoutWidth = columns * spacingX;
+    double layoutHeight = rows * spacingY;
+    double insetX = spacingX * 0.18;
+    double insetY = spacingY * 0.18;
+    double centerX = startX + (layoutWidth * 0.5);
+    double centerY = startY + (layoutHeight * 0.5);
+    double maxRadiusX = std::max(1.0, (layoutWidth * 0.5) - insetX);
+    double maxRadiusY = std::max(1.0, (layoutHeight * 0.5) - insetY);
+    const double goldenAngle = 2.39996322972865332;
+    const double scale = 0.88;
     std::map<int, int> nodeIdToIndex;
 
     for (int i = 0; i < numNodes; ++i) {
         int nId = parsedNodes[i];
-        
-        // Calculate the angle for this node
-        double angle = (2.0 * M_PI * i) / numNodes;
-        
-        // Calculate coordinates
-        double x = centerX + radius * std::cos(angle);
-        double y = centerY + radius * std::sin(angle);
+
+        double normalizedRadius = std::sqrt((static_cast<double>(i) + 0.5) / static_cast<double>(numNodes));
+        double angle = i * goldenAngle;
+
+        // Place nodes on a spiral so the layout stays organic and avoids row/column alignment.
+        double x = centerX + (std::cos(angle) * maxRadiusX * normalizedRadius * scale);
+        double y = centerY + (std::sin(angle) * maxRadiusY * normalizedRadius * scale);
         
         g.addNode(nId, x, y);
         nodeIdToIndex[nId] = i;

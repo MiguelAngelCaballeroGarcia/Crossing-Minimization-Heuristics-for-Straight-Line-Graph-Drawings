@@ -5,6 +5,12 @@
 #include <algorithm>
 #include <cstdint>
 
+namespace {
+
+constexpr double kIntersectionEpsilon = 1e-9;
+
+} // namespace
+
 // Helper to create a unique 64-bit key for any pair of 32-bit edge IDs.
 // This ensures we don't check Edge A vs Edge B multiple times if they share multiple cells.
 inline uint64_t makeEdgePairKey(int id1, int id2) {
@@ -27,7 +33,7 @@ std::vector<PlanarizedGraph::IntersectionData> IntersectionDetector::findInterse
     
     // We use a small epsilon to avoid floating point errors identifying 
     // shared endpoints (nodes) as crossings.
-    const double EPS = 1e-9; 
+    const double EPS = kIntersectionEpsilon; 
 
     // 1. Iterate over every cell in the spatial grid
     size_t numCells = grid.getNumCells();

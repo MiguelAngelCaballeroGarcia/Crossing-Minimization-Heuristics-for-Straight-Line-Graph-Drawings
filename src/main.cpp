@@ -10,10 +10,12 @@
 int main() {
     Graph myGraph;
 
-    const char* primaryGraphPath = "src/data/full_dataset/graphswith44nodes/ug5.44";
-    const char* fallbackGraphPath = "data/full_dataset/graphswith44nodes/ug5.44";
+    const char* primaryGraphPath = "src/data/full_dataset/graphswith50nodes/ug2.50";
+    const char* fallbackGraphPath = "src/data/full_dataset/graphswith50nodes/ug2.50";
+    const char* buildFallbackGraphPath = "../../src/data/full_dataset/graphswith50nodes/ug2.50";
     bool loaded = GraphLoader::loadFromRomeXML(primaryGraphPath, myGraph) ||
-                  GraphLoader::loadFromRomeXML(fallbackGraphPath, myGraph);
+                  GraphLoader::loadFromRomeXML(fallbackGraphPath, myGraph) ||
+                  GraphLoader::loadFromRomeXML(buildFallbackGraphPath, myGraph);
 
     if (loaded) {
         

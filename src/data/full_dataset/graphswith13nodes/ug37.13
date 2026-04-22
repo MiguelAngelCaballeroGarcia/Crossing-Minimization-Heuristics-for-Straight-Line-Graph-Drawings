@@ -1,0 +1,72 @@
+
+<UNDISECTION>
+	<NODELIST>
+		<NODE>
+			1
+			<EDGE> 1 --
+		</NODE>
+		<NODE>
+			2
+			<EDGE> 4 --
+			<EDGE> 5 --
+		</NODE>
+		<NODE>
+			3
+			<EDGE> 2 --
+			<EDGE> 3 --
+		</NODE>
+		<NODE>
+			4
+			<EDGE> 13 --
+			<EDGE> 14 --
+		</NODE>
+		<NODE>
+			5
+			<EDGE> 6 --
+			<EDGE> 9 --
+			<EDGE> 12 --
+		</NODE>
+		<NODE>
+			6
+			<EDGE> 8 --
+			<EDGE> 11 --
+		</NODE>
+		<NODE>
+			7
+			<EDGE> 7 --
+			<EDGE> 10 --
+			<EDGE> 14 --
+		</NODE>
+		<NODE>
+			8
+			<EDGE> 1 --
+			<EDGE> 2 --
+		</NODE>
+		<NODE>
+			9
+			<EDGE> 5 --
+			<EDGE> 13 --
+		</NODE>
+		<NODE>
+			10
+			<EDGE> 3 --
+			<EDGE> 4 --
+			<EDGE> 6 --
+		</NODE>
+		<NODE>
+			11
+			<EDGE> 11 --
+			<EDGE> 12 --
+		</NODE>
+		<NODE>
+			12
+			<EDGE> 9 --
+			<EDGE> 10 --
+		</NODE>
+		<NODE>
+			13
+			<EDGE> 7 --
+			<EDGE> 8 --
+		</NODE>
+	</NODELIST>
+</UNDISECTION>
