@@ -26,8 +26,9 @@ private:
     bool showPlanarized = true;
     bool showGrid = true;
     bool showROI = true; // New toggle
-    bool showNodeIds = true;
-    bool showScaleRuler = true;
+    bool showNodeIds = false;
+    bool showScaleRuler = false;
+    ROIBoundaryMethod roiBoundaryMethod = ROIBoundaryMethod::NEIGHBORS_INSIDE;
 
     // Relocation Debug Data
     int activeNodeId = -1;

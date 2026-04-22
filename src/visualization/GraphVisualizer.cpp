@@ -43,8 +43,36 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
     if (IsKeyPressed(KEY_K)) showScaleRuler = !showScaleRuler;
 
     const Rectangle iterationBox = {(float)width - 250.0f, 10.0f, 180.0f, 32.0f};
+    const Rectangle roiBoundaryButton = {(float)width - 250.0f, 170.0f, 220.0f, 32.0f};
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        iterationBoxActive = CheckCollisionPointRec(GetMousePosition(), iterationBox);
+        const Vector2 mousePos = GetMousePosition();
+
+        if (CheckCollisionPointRec(mousePos, roiBoundaryButton)) {
+            switch (roiBoundaryMethod) {
+                case ROIBoundaryMethod::NEIGHBORS_INSIDE:
+                    roiBoundaryMethod = ROIBoundaryMethod::FULL_GRID;
+                    break;
+                case ROIBoundaryMethod::FULL_GRID:
+                    roiBoundaryMethod = ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL;
+                    break;
+                case ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL:
+                default:
+                    roiBoundaryMethod = ROIBoundaryMethod::NEIGHBORS_INSIDE;
+                    break;
+            }
+
+            iterationBoxActive = false;
+
+            if (activeNodeId != -1) {
+                RelocationManager manager(planarGraph);
+                manager.setROIBoundaryMethod(roiBoundaryMethod);
+                currentROI = manager.calculateROI(activeNodeId);
+                currentAnalysis = manager.analyzeLocalRegions(currentROI, activeNodeId);
+                currentLocalSegments = currentAnalysis.localGeometry;
+            }
+        } else {
+            iterationBoxActive = CheckCollisionPointRec(mousePos, iterationBox);
+        }
     }
 
     if (iterationBoxActive) {
@@ -76,6 +104,7 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
 
             if (iterations > 0) {
                 RelocationManager manager(planarGraph);
+                manager.setROIBoundaryMethod(roiBoundaryMethod);
                 
                 auto startTime = std::chrono::high_resolution_clock::now();
                 
@@ -147,6 +176,7 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
     // --- TRIGGER RELOCATION STEP (PHASE 1) ---
     if (IsKeyPressed(KEY_R)) {
         RelocationManager manager(planarGraph);
+        manager.setROIBoundaryMethod(roiBoundaryMethod);
         
         activeNodeId = manager.selectVariableNode();
         if (activeNodeId != -1) {
@@ -468,6 +498,22 @@ void GraphVisualizer::render(const Graph& originalGraph, const PlanarizedGraph& 
     DrawText("Right Click + Drag to Pan | Scroll to Zoom", 10, 275, 20, GRAY);
 
     Rectangle iterationBox = {(float)width - 250.0f, 10.0f, 180.0f, 32.0f};
+    Rectangle roiBoundaryButton = {(float)width - 250.0f, 170.0f, 220.0f, 32.0f};
+    const char* roiModeLabel = "neighbors inside";
+    switch (roiBoundaryMethod) {
+        case ROIBoundaryMethod::NEIGHBORS_INSIDE:
+            roiModeLabel = "neighbors inside";
+            break;
+        case ROIBoundaryMethod::FULL_GRID:
+            roiModeLabel = "whole spatial grid";
+            break;
+        case ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL:
+            roiModeLabel = "local 3x3 around node";
+            break;
+        default:
+            break;
+    }
+
     DrawText("Batch Iterations:", width - 250, 48, 16, DARKGRAY);
     DrawRectangleRec(iterationBox, iterationBoxActive ? Fade(SKYBLUE, 0.2f) : Fade(LIGHTGRAY, 0.35f));
     DrawRectangleLinesEx(iterationBox, 2.0f, iterationBoxActive ? BLUE : DARKGRAY);
@@ -493,6 +539,11 @@ void GraphVisualizer::render(const Graph& originalGraph, const PlanarizedGraph& 
                  14,
                  DARKGREEN);
     }
+
+    DrawText("ROI Boundary Method:", width - 250, 154, 16, DARKGRAY);
+    DrawRectangleRec(roiBoundaryButton, Fade(LIGHTGRAY, 0.35f));
+    DrawRectangleLinesEx(roiBoundaryButton, 2.0f, DARKGRAY);
+    DrawText(TextFormat("Click to switch: %s", roiModeLabel), width - 242, 178, 14, BLACK);
     
     DrawFPS(GetScreenWidth() - 100, 10);
     EndDrawing();

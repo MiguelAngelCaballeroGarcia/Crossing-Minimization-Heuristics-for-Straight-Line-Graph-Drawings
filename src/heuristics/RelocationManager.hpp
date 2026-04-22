@@ -56,6 +56,12 @@ struct RelocationStepResult {
     int targetGlobalDelta = 0;
 };
 
+enum class ROIBoundaryMethod {
+    NEIGHBORS_INSIDE,
+    FULL_GRID,
+    LOCAL_3X3_AROUND_NODE_CELL
+};
+
 class RelocationManager {
 public:
     // Takes references to the core logic structures
@@ -73,6 +79,9 @@ public:
      * @return The calculated ROI containing both grid indices and physical bounds.
      */
     RegionOfInterest calculateROI(int nodeId);
+
+    void setROIBoundaryMethod(ROIBoundaryMethod method);
+    ROIBoundaryMethod getROIBoundaryMethod() const;
 
     /**
      * @brief Phase 1.3: Extracts all edges in the ROI, clips them to the borders,
@@ -137,6 +146,12 @@ private:
     std::vector<int> m_originalNodeIds;
     std::unordered_set<int> m_originalNodeIdSet;  // For O(1) membership tests
     std::mt19937 m_rng;  // Seeded once in constructor for consistent performance
+    ROIBoundaryMethod m_roiBoundaryMethod = ROIBoundaryMethod::NEIGHBORS_INSIDE;
+
+    RegionOfInterest calculateROINeighborsInside(int nodeId) const;
+    RegionOfInterest calculateROIFullGrid() const;
+    RegionOfInterest calculateROILocal3x3AroundNodeCell(int nodeId) const;
+    RegionOfInterest makeROIFromCellBounds(int minCol, int maxCol, int minRow, int maxRow) const;
 
     /**
      * @brief Helper function to clip a segment against the ROI physical bounds.

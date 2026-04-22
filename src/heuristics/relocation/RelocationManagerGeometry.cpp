@@ -57,25 +57,61 @@ int RelocationManager::selectVariableNode() {
     return m_originalNodeIds[distrib(m_rng)];  // Use seeded member RNG
 }
 
+void RelocationManager::setROIBoundaryMethod(ROIBoundaryMethod method) {
+    m_roiBoundaryMethod = method;
+}
+
+ROIBoundaryMethod RelocationManager::getROIBoundaryMethod() const {
+    return m_roiBoundaryMethod;
+}
+
 RegionOfInterest RelocationManager::calculateROI(int nodeId) {
+    switch (m_roiBoundaryMethod) {
+        case ROIBoundaryMethod::NEIGHBORS_INSIDE:
+            return calculateROINeighborsInside(nodeId);
+        case ROIBoundaryMethod::FULL_GRID:
+            return calculateROIFullGrid();
+        case ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL:
+            return calculateROILocal3x3AroundNodeCell(nodeId);
+        default:
+            return calculateROINeighborsInside(nodeId);
+    }
+}
+
+RegionOfInterest RelocationManager::makeROIFromCellBounds(int minCol,
+                                                          int maxCol,
+                                                          int minRow,
+                                                          int maxRow) const {
     RegionOfInterest roi;
     const auto& grid = m_pGraph.getGrid();
 
+    roi.minCol = minCol;
+    roi.maxCol = maxCol;
+    roi.minRow = minRow;
+    roi.maxRow = maxRow;
+
+    roi.minX = grid.getMinX() + (roi.minCol * grid.getCellWidth());
+    roi.maxX = grid.getMinX() + ((roi.maxCol + 1) * grid.getCellWidth());
+    roi.minY = grid.getMinY() + (roi.minRow * grid.getCellHeight());
+    roi.maxY = grid.getMinY() + ((roi.maxRow + 1) * grid.getCellHeight());
+
+    return roi;
+}
+
+RegionOfInterest RelocationManager::calculateROINeighborsInside(int nodeId) const {
+    const auto& grid = m_pGraph.getGrid();
+
     if (!m_pGraph.hasNode(nodeId)) {
-        roi.minCol = roi.maxCol = 0;
-        roi.minRow = roi.maxRow = 0;
-        roi.minX = roi.maxX = grid.getMinX();
-        roi.minY = roi.maxY = grid.getMinY();
-        return roi;
+        return makeROIFromCellBounds(0, 0, 0, 0);
     }
 
     const auto& node = m_pGraph.getNode(nodeId);
     auto neighbors = relocation_detail::collectOriginalNeighbors(nodeId, m_pGraph);
 
-    roi.minCol = relocation_detail::toColIndex(node.x, grid);
-    roi.maxCol = roi.minCol;
-    roi.minRow = relocation_detail::toRowIndex(node.y, grid);
-    roi.maxRow = roi.minRow;
+    int minCol = relocation_detail::toColIndex(node.x, grid);
+    int maxCol = minCol;
+    int minRow = relocation_detail::toRowIndex(node.y, grid);
+    int maxRow = minRow;
 
     for (int neighborId : neighbors) {
         if (!m_pGraph.hasNode(neighborId)) continue;
@@ -84,18 +120,49 @@ RegionOfInterest RelocationManager::calculateROI(int nodeId) {
         int col = relocation_detail::toColIndex(neighbor.x, grid);
         int row = relocation_detail::toRowIndex(neighbor.y, grid);
 
-        roi.minCol = std::min(roi.minCol, col);
-        roi.maxCol = std::max(roi.maxCol, col);
-        roi.minRow = std::min(roi.minRow, row);
-        roi.maxRow = std::max(roi.maxRow, row);
+        minCol = std::min(minCol, col);
+        maxCol = std::max(maxCol, col);
+        minRow = std::min(minRow, row);
+        maxRow = std::max(maxRow, row);
     }
 
-    roi.minX = grid.getMinX() + (roi.minCol * grid.getCellWidth());
-    roi.maxX = grid.getMinX() + ((roi.maxCol + 1) * grid.getCellWidth());
-    roi.minY = grid.getMinY() + (roi.minRow * grid.getCellHeight());
-    roi.maxY = grid.getMinY() + ((roi.maxRow + 1) * grid.getCellHeight());
+    return makeROIFromCellBounds(minCol, maxCol, minRow, maxRow);
+}
 
-    return roi;
+RegionOfInterest RelocationManager::calculateROIFullGrid() const {
+    const auto& grid = m_pGraph.getGrid();
+
+    if (grid.getNumCellsX() <= 0 || grid.getNumCellsY() <= 0) {
+        return makeROIFromCellBounds(0, 0, 0, 0);
+    }
+
+    return makeROIFromCellBounds(0,
+                                 grid.getNumCellsX() - 1,
+                                 0,
+                                 grid.getNumCellsY() - 1);
+}
+
+RegionOfInterest RelocationManager::calculateROILocal3x3AroundNodeCell(int nodeId) const {
+    const auto& grid = m_pGraph.getGrid();
+
+    if (grid.getNumCellsX() <= 0 || grid.getNumCellsY() <= 0) {
+        return makeROIFromCellBounds(0, 0, 0, 0);
+    }
+
+    if (!m_pGraph.hasNode(nodeId)) {
+        return makeROIFromCellBounds(0, 0, 0, 0);
+    }
+
+    const auto& node = m_pGraph.getNode(nodeId);
+    const int centerCol = relocation_detail::toColIndex(node.x, grid);
+    const int centerRow = relocation_detail::toRowIndex(node.y, grid);
+
+    const int minCol = std::max(0, centerCol - 1);
+    const int maxCol = std::min(grid.getNumCellsX() - 1, centerCol + 1);
+    const int minRow = std::max(0, centerRow - 1);
+    const int maxRow = std::min(grid.getNumCellsY() - 1, centerRow + 1);
+
+    return makeROIFromCellBounds(minCol, maxCol, minRow, maxRow);
 }
 
 std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const RegionOfInterest& roi, int variableNodeId) {
