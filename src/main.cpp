@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -15,11 +16,51 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 namespace fs = std::filesystem;
 
 namespace {
+
+ROIBoundaryMethod promptForROIBoundaryMethod() {
+    while (true) {
+        std::cout << "Which method do you want to use?\n";
+        std::cout << "1. Neighbors inside\n";
+        std::cout << "2. Whole graph\n";
+        std::cout << "3. 3x3 grid (or less if found in an edge or corner)\n";
+        std::cout << "Enter 1, 2, or 3: ";
+        std::cout.flush();
+
+        int choice = 0;
+        if (!(std::cin >> choice)) {
+            if (std::cin.eof()) {
+                std::cin.clear();
+                std::cout << "\nNo selection provided. Defaulting to 1. Neighbors inside.\n";
+                return ROIBoundaryMethod::NEIGHBORS_INSIDE;
+            }
+
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            std::cout << "Invalid input. Please enter 1, 2, or 3.\n";
+            continue;
+        }
+
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        switch (choice) {
+            case 1:
+                return ROIBoundaryMethod::NEIGHBORS_INSIDE;
+            case 2:
+                return ROIBoundaryMethod::FULL_GRID;
+            case 3:
+                return ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL;
+            default:
+                std::cout << "Invalid option. Please enter 1, 2, or 3.\n";
+                break;
+        }
+    }
+}
 
 fs::path resolveSourceRoot() {
     const fs::path current = fs::current_path();
@@ -102,7 +143,20 @@ std::vector<fs::path> collectDatasetFiles(const fs::path& datasetRoot) {
 
         return a.generic_string() < b.generic_string();
     });
-    return files;
+
+    std::vector<fs::path> limitedFiles;
+    limitedFiles.reserve(files.size());
+    std::unordered_map<int, int> seenByNodeCount;
+
+    for (const auto& file : files) {
+        const int nodeCount = parseNodeCountFromPath(file);
+        int& seen = seenByNodeCount[nodeCount];
+        if (seen >= 10) continue;
+        limitedFiles.push_back(file);
+        ++seen;
+    }
+
+    return limitedFiles;
 }
 
 bool loadGraphFile(const fs::path& filePath, Graph& graph) {
@@ -112,7 +166,7 @@ bool loadGraphFile(const fs::path& filePath, Graph& graph) {
 
 PlanarizedGraph buildPlanarizedGraph(const Graph& graph) {
     auto [minX, minY, maxX, maxY] = graph.getBounds();
-    SpatialGrid detectionGrid(minX, maxX, minY, maxY, graph.nodes.size());
+    SpatialGrid detectionGrid(minX, maxX, minY, maxY, graph.nodes.size(), graph.edges.size());
 
     for (const auto& edge : graph.edges) {
         if (edge.u_id < 0 || edge.v_id < 0 ||
@@ -134,7 +188,7 @@ int computeExactCrossings(const Graph& graph) {
     if (graph.nodes.empty()) return 0;
 
     auto [minX, minY, maxX, maxY] = graph.getBounds();
-    SpatialGrid detectionGrid(minX, maxX, minY, maxY, graph.nodes.size());
+    SpatialGrid detectionGrid(minX, maxX, minY, maxY, graph.nodes.size(), graph.edges.size());
 
     for (const auto& edge : graph.edges) {
         if (edge.u_id < 0 || edge.v_id < 0 ||
@@ -170,8 +224,10 @@ std::string makeCsvRow(const std::string& graphPath,
                        int edgeCount,
                        int iterations,
                        int initialExactCrossings,
+                       int finalComputedCrossings,
                        int finalExactCrossings,
-                       int crossingError,
+                       int finalCrossingDiff,
+                       double avoidedExactCrossingsPct,
                        double durationMs) {
     std::ostringstream row;
     row << graphPath << ','
@@ -180,16 +236,32 @@ std::string makeCsvRow(const std::string& graphPath,
         << edgeCount << ','
         << iterations << ','
         << initialExactCrossings << ','
+        << finalComputedCrossings << ','
         << finalExactCrossings << ','
-        << crossingError << ','
+        << finalCrossingDiff << ','
+        << avoidedExactCrossingsPct << ','
         << durationMs;
     return row.str();
 }
 
+fs::path makeBatchResultsPath(const fs::path& sourceRoot, ROIBoundaryMethod method) {
+    switch (method) {
+        case ROIBoundaryMethod::NEIGHBORS_INSIDE:
+            return sourceRoot / "batch_results_neighbors_inside.csv";
+        case ROIBoundaryMethod::FULL_GRID:
+            return sourceRoot / "batch_results_whole_graph.csv";
+        case ROIBoundaryMethod::LOCAL_3X3_AROUND_NODE_CELL:
+            return sourceRoot / "batch_results_3x3.csv";
+    }
+
+    return sourceRoot / "batch_results.csv";
+}
+
 void runBatchDatasetPass() {
+    const ROIBoundaryMethod roiBoundaryMethod = promptForROIBoundaryMethod();
     const fs::path sourceRoot = resolveSourceRoot();
     const fs::path datasetRoot = sourceRoot / "data" / "full_dataset";
-    const fs::path csvPath = sourceRoot / "batch_results.csv";
+    const fs::path csvPath = makeBatchResultsPath(sourceRoot, roiBoundaryMethod);
 
     std::ofstream csvFile(csvPath, std::ios::trunc);
     if (!csvFile.is_open()) {
@@ -197,7 +269,7 @@ void runBatchDatasetPass() {
         return;
     }
 
-    csvFile << "graph_path,run_index,node_count,edge_count,iterations,initial_exact_crossings,final_exact_crossings,crossing_error,duration_ms\n";
+    csvFile << "graph_path,run_index,node_count,edge_count,iterations,initial_exact_crossings,final_computed_crossings,final_exact_crossings,final_crossing_diff,avoided_exact_crossings_pct,duration_ms\n";
 
     const std::vector<fs::path> graphFiles = collectDatasetFiles(datasetRoot);
     if (graphFiles.empty()) {
@@ -244,6 +316,7 @@ void runBatchDatasetPass() {
             Graph runGraph = baseGraph;
             PlanarizedGraph planarGraph = buildPlanarizedGraph(runGraph);
             RelocationManager manager(planarGraph);
+            manager.setROIBoundaryMethod(roiBoundaryMethod);
 
             const auto start = std::chrono::steady_clock::now();
             for (int step = 0; step < iterations; ++step) {
@@ -251,9 +324,14 @@ void runBatchDatasetPass() {
             }
             const auto end = std::chrono::steady_clock::now();
 
+            const int finalComputedCrossings = planarGraph.countTotalCrossings();
             Graph finalGraph = makeCurrentGraphFromPlanarized(runGraph, planarGraph);
             const int finalExactCrossings = computeExactCrossings(finalGraph);
-            const int crossingError = finalExactCrossings - initialExactCrossings;
+            const int finalCrossingDiff = std::abs(finalComputedCrossings - finalExactCrossings);
+            const double avoidedExactCrossingsPct =
+                (initialExactCrossings > 0)
+                    ? (100.0 - (static_cast<double>(finalExactCrossings) / static_cast<double>(initialExactCrossings) * 100.0))
+                    : 0.0;
             const double durationMs = std::chrono::duration<double, std::milli>(end - start).count();
 
             const std::string row = makeCsvRow(graphPathText,
@@ -262,8 +340,10 @@ void runBatchDatasetPass() {
                                                edgeCount,
                                                iterations,
                                                initialExactCrossings,
+                                               finalComputedCrossings,
                                                finalExactCrossings,
-                                               crossingError,
+                                               finalCrossingDiff,
+                                               avoidedExactCrossingsPct,
                                                durationMs);
 
             csvFile << row << '\n';

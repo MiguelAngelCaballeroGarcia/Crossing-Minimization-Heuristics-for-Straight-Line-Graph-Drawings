@@ -94,7 +94,7 @@ std::vector<LocalSegment> RegionBuilder::splitSegmentsAtIntersections(const std:
         maxY = minY + 1.0;
     }
 
-    SpatialGrid tempGrid(minX, maxX, minY, maxY, static_cast<int>(tempGraph.nodes.size()));
+    SpatialGrid tempGrid(minX, maxX, minY, maxY, static_cast<int>(tempGraph.nodes.size()), static_cast<int>(tempGraph.edges.size()));
     for (size_t i = 0; i < segments.size(); ++i) {
         const auto& seg = segments[i];
         tempGrid.insertEdge(static_cast<int>(i), seg.x1, seg.y1, seg.x2, seg.y2);
