@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 #include "Graph.hpp" // Your original graph
 #include "SpatialGrid.hpp" // For spatial indexing and incremental updates
@@ -79,6 +80,7 @@ public:
 
     // Fast lookup: Original Edge ID -> List of Planar Edge IDs (its sub-segments)
     std::vector<std::vector<int>> originalEdgeToPlanarEdges;
+    std::unordered_map<std::uint64_t, int> crossingPairToNode;
 
     std::vector<PlanarNode> nodes;
     std::vector<std::uint8_t> nodeActive;
@@ -129,6 +131,7 @@ public:
     
     void destroyCrossing(int crossingNodeIdx);
     void createCrossing(int edge1Id, int edge2Id, double x, double y);
+    int getCrossingNodeForPair(int edgeA, int edgeB) const;
 
     // Moves a node and updates grid occupancy for both node and incident planar edges.
     void updateNodePosition(int nodeId, double newX, double newY);

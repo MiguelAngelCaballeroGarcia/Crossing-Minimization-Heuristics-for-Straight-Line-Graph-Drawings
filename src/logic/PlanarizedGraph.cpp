@@ -7,6 +7,12 @@ namespace {
 
 constexpr double kIntersectionEpsilon = 1e-9;
 
+inline std::uint64_t makeCrossingPairKey(int edgeA, int edgeB) {
+    const std::uint64_t a = static_cast<std::uint64_t>(std::min(edgeA, edgeB));
+    const std::uint64_t b = static_cast<std::uint64_t>(std::max(edgeA, edgeB));
+    return (a << 32) | b;
+}
+
 } // namespace
 
 void PlanarizedGraph::ensureNodeCapacity(int id) {
@@ -125,9 +131,10 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
 
     edges.reserve(totalExpectedEdges);
     edgeActive.reserve(totalExpectedEdges);
+    crossingPairToNode.reserve(intersections.size() * 2);
 
     // Initialize the member grid with actual dimensions
-    grid = SpatialGrid(minX, maxX, minY, maxY, totalExpectedNodes);
+    grid = SpatialGrid(minX, maxX, minY, maxY, totalExpectedNodes, totalExpectedEdges);
 
     // 2. Map ORIGINAL nodes
     for (const auto& origNode : originalGraph.nodes) {
@@ -179,6 +186,7 @@ PlanarizedGraph::PlanarizedGraph(const Graph& originalGraph, const std::vector<I
 
         nodes[cId] = cNode;
         grid.insertNode(cId, cNode.x, cNode.y); // <-- Sync to grid
+        crossingPairToNode[makeCrossingPairKey(ix.edge1_id, ix.edge2_id)] = cId;
         
         ensureOriginalEdgeCapacity(ix.edge1_id);
         ensureOriginalEdgeCapacity(ix.edge2_id);
@@ -276,6 +284,10 @@ void PlanarizedGraph::removePlanarEdge(int u_id, int v_id, int origEdgeId) {
 void PlanarizedGraph::destroyCrossing(int crossingNodeIdx) {
     if (!hasNode(crossingNodeIdx)) return;
     PlanarNode& cNode = getNode(crossingNodeIdx);
+    if (cNode.type != NodeType::CROSSING) return;
+
+    const std::uint64_t pairKey = makeCrossingPairKey(cNode.original_edge_1, cNode.original_edge_2);
+    crossingPairToNode.erase(pairKey);
 
     // (Your exact healing logic...)
     int e1 = cNode.original_edge_1;
@@ -306,6 +318,12 @@ void PlanarizedGraph::destroyCrossing(int crossingNodeIdx) {
 }
 
 void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double y) {
+    if (getCrossingNodeForPair(edge1Id, edge2Id) != -1) {
+        return;
+    }
+
+    const std::uint64_t pairKey = makeCrossingPairKey(edge1Id, edge2Id);
+
     int cId = getNextNodeId();
 
     PlanarNode& storedNode = nodes[cId];
@@ -317,6 +335,13 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
     storedNode.original_edge_1 = edge1Id;
     storedNode.original_edge_2 = edge2Id;
     grid.insertNode(cId, x, y);
+    crossingPairToNode[pairKey] = cId;
+
+    auto rollbackCrossingCreation = [&]() {
+        crossingPairToNode.erase(pairKey);
+        grid.removeNode(cId, x, y);
+        deactivateNode(cId);
+    };
 
     struct EdgeSplitTarget {
         int edgeId;
@@ -330,8 +355,7 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
 
     for (int eId : affectedEdges) {
         if (eId < 0 || eId >= static_cast<int>(originalEdgeToPlanarEdges.size())) {
-            grid.removeNode(cId, x, y);
-            deactivateNode(cId);
+            rollbackCrossingCreation();
             return;
         }
 
@@ -351,8 +375,7 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
         }
 
         if (!found) {
-            grid.removeNode(cId, x, y);
-            deactivateNode(cId);
+            rollbackCrossingCreation();
             return;
         }
 
@@ -486,4 +509,12 @@ int PlanarizedGraph::countTotalCrossings() const {
         if (node.type == NodeType::CROSSING) ++count;
     });
     return count;
+}
+
+int PlanarizedGraph::getCrossingNodeForPair(int edgeA, int edgeB) const {
+    const auto it = crossingPairToNode.find(makeCrossingPairKey(edgeA, edgeB));
+    if (it == crossingPairToNode.end()) {
+        return -1;
+    }
+    return hasNode(it->second) ? it->second : -1;
 }

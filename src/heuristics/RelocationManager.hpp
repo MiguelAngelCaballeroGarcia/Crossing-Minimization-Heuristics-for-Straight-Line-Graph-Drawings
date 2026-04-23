@@ -4,6 +4,7 @@
 #include <optional>
 #include <utility>
 #include <random>
+#include <unordered_map>
 #include <unordered_set>
 #include "../logic/PlanarizedGraph.hpp"
 #include "LocalSegment.hpp"
@@ -147,6 +148,9 @@ private:
     std::unordered_set<int> m_originalNodeIdSet;  // For O(1) membership tests
     std::mt19937 m_rng;  // Seeded once in constructor for consistent performance
     ROIBoundaryMethod m_roiBoundaryMethod = ROIBoundaryMethod::NEIGHBORS_INSIDE;
+    mutable std::unordered_map<long long, int> m_pairToOriginalEdgeCache;
+    mutable bool m_pairToOriginalEdgeCacheValid = false;
+    mutable std::unordered_map<int, std::optional<std::pair<int, int>>> m_originalEdgeEndpointsCache;
 
     RegionOfInterest calculateROINeighborsInside(int nodeId) const;
     RegionOfInterest calculateROIFullGrid() const;
@@ -196,7 +200,6 @@ private:
                                                                            int variableNodeId,
                                                                            double movedX,
                                                                            double movedY) const;
-    int findExistingCrossingNodeForPair(int edgeA, int edgeB) const;
     int countGlobalCrossingsForVariableAtPosition(int variableNodeId,
                                                   double movedX,
                                                   double movedY,
@@ -210,8 +213,10 @@ private:
                                                            std::mt19937& rng) const;
     std::optional<std::pair<double, double>> chooseInteriorPointInFace(const Face& face) const;
     void reconcileCrossingsForMovedEdges(const std::unordered_set<int>& movedOriginalEdges);
-    std::vector<int> computeFaceGlobalCrossingDeltas(const DualGraph& dualGraph,
+    std::vector<int> computeFaceGlobalCrossingDeltas(const LocalRegionAnalysis& analysis,
                                                      int variableNodeId) const;
+    void resetStepCrossingCaches() const;
+    void ensurePairToOriginalEdgeCache() const;
     
     // Determine which side of an infinite directed line p1->p2 a point falls on.
     int whichSideOfLine(double px, double py, double x1, double y1, double x2, double y2) const;

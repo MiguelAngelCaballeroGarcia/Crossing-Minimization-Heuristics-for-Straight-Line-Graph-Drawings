@@ -6,10 +6,13 @@
 #include <limits>
 #include <queue>
 #include <random>
+#include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 LocalRegionAnalysis RelocationManager::analyzeLocalRegions(const RegionOfInterest& roi, int variableNodeId) {
     LocalRegionAnalysis analysis;
+    resetStepCrossingCaches();
 
     analysis.localGeometry = extractAndClipGeometry(roi, variableNodeId);
     analysis.dualGraph = RegionBuilder::buildRegionsAndDualGraph(analysis.localGeometry);
@@ -31,52 +34,105 @@ LocalRegionAnalysis RelocationManager::analyzeLocalRegions(const RegionOfInteres
                                               analysis.faceParent,
                                               ambiguousProbeDetected);
     analysis.hasAmbiguousActiveSideProbe = ambiguousProbeDetected;
-    analysis.faceGlobalCrossingDelta = computeFaceGlobalCrossingDeltas(analysis.dualGraph, variableNodeId);
+    analysis.faceGlobalCrossingDelta = computeFaceGlobalCrossingDeltas(analysis, variableNodeId);
 
     return analysis;
 }
 
-std::vector<int> RelocationManager::computeFaceGlobalCrossingDeltas(const DualGraph& dualGraph,
+std::vector<int> RelocationManager::computeFaceGlobalCrossingDeltas(const LocalRegionAnalysis& analysis,
                                                                     int variableNodeId) const {
-    std::vector<int> deltas(dualGraph.faces.size(), 0);
+    std::vector<int> deltas(analysis.dualGraph.faces.size(), 0);
 
-    std::unordered_set<int> movedOriginalEdges;
-    for (const auto& [neighborId, originalEdgeId] : collectSelectedNeighborEdges(variableNodeId)) {
-        (void)neighborId;
-        if (originalEdgeId >= 0) movedOriginalEdges.insert(originalEdgeId);
-    }
-
-    if (movedOriginalEdges.empty()) {
+    if (analysis.sourceFaceId < 0 ||
+        analysis.sourceFaceId >= static_cast<int>(analysis.dualGraph.faces.size())) {
         return deltas;
     }
 
-    if (!m_pGraph.hasNode(variableNodeId)) {
-        return deltas;
+    auto makeFacePairKey = [](int a, int b) {
+        const std::uint64_t lo = static_cast<std::uint64_t>(std::min(a, b));
+        const std::uint64_t hi = static_cast<std::uint64_t>(std::max(a, b));
+        return (lo << 32) | hi;
+    };
+
+    std::unordered_map<std::uint64_t, DualGraphEdge> treeEdgeByFaces;
+    treeEdgeByFaces.reserve(analysis.dualTreeEdges.size() * 2);
+    for (const auto& edge : analysis.dualTreeEdges) {
+        treeEdgeByFaces[makeFacePairKey(edge.faceA, edge.faceB)] = edge;
     }
-    const auto& variableNode = m_pGraph.getNode(variableNodeId);
 
-    const int currentCrossings = countGlobalCrossingsForVariableAtPosition(
-        variableNodeId,
-        variableNode.x,
-        variableNode.y,
-        movedOriginalEdges
-    );
+    auto findBoundaryEdge = [&](int faceA, int faceB) -> std::optional<DualGraphEdge> {
+        const auto key = makeFacePairKey(faceA, faceB);
+        auto treeIt = treeEdgeByFaces.find(key);
+        if (treeIt != treeEdgeByFaces.end()) {
+            return treeIt->second;
+        }
 
-    for (const auto& face : dualGraph.faces) {
-        if (face.isOuter || face.vertices.empty()) continue;
-        if (face.id < 0 || face.id >= static_cast<int>(deltas.size())) continue;
+        for (const auto& edge : analysis.dualGraph.adjacency) {
+            if ((edge.faceA == faceA && edge.faceB == faceB) ||
+                (edge.faceA == faceB && edge.faceB == faceA)) {
+                return edge;
+            }
+        }
+        return std::nullopt;
+    };
 
-        auto barycenter = chooseInteriorPointInFace(face);
-        if (!barycenter.has_value()) continue;
+    std::vector<std::vector<int>> children(analysis.faceParent.size());
+    for (int faceId = 0; faceId < static_cast<int>(analysis.faceParent.size()); ++faceId) {
+        const int parent = analysis.faceParent[faceId];
+        if (parent >= 0 && parent < static_cast<int>(children.size())) {
+            children[parent].push_back(faceId);
+        }
+    }
 
-        const int candidateCrossings = countGlobalCrossingsForVariableAtPosition(
-            variableNodeId,
-            barycenter->first,
-            barycenter->second,
-            movedOriginalEdges
-        );
+    std::queue<int> q;
+    std::vector<std::uint8_t> visited(analysis.dualGraph.faces.size(), 0);
+    q.push(analysis.sourceFaceId);
+    visited[analysis.sourceFaceId] = 1;
 
-        deltas[face.id] = candidateCrossings - currentCrossings;
+    while (!q.empty()) {
+        const int currentFace = q.front();
+        q.pop();
+
+        if (currentFace < 0 || currentFace >= static_cast<int>(children.size())) continue;
+
+        for (int childFace : children[currentFace]) {
+            auto boundary = findBoundaryEdge(currentFace, childFace);
+            if (!boundary.has_value()) {
+                continue;
+            }
+
+            std::vector<std::pair<int, int>> disappear;
+            std::vector<std::pair<int, int>> appear;
+            collectTransitionCrossingPairs(variableNodeId,
+                                           currentFace,
+                                           *boundary,
+                                           disappear,
+                                           appear,
+                                           analysis.dualGraph);
+
+            std::set<std::pair<int, int>> disappearSet;
+            std::set<std::pair<int, int>> appearSet;
+            for (const auto& p : disappear) disappearSet.insert(normalizeEdgePair(p.first, p.second));
+            for (const auto& p : appear) appearSet.insert(normalizeEdgePair(p.first, p.second));
+
+            int boundaryDelta = 0;
+            for (const auto& p : appearSet) {
+                if (disappearSet.find(p) == disappearSet.end()) {
+                    ++boundaryDelta;
+                }
+            }
+            for (const auto& p : disappearSet) {
+                if (appearSet.find(p) == appearSet.end()) {
+                    --boundaryDelta;
+                }
+            }
+
+            deltas[childFace] = deltas[currentFace] + boundaryDelta;
+            if (!visited[childFace]) {
+                visited[childFace] = 1;
+                q.push(childFace);
+            }
+        }
     }
 
     return deltas;
