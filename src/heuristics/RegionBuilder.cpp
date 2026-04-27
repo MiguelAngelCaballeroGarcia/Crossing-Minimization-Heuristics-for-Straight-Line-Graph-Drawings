@@ -1,4 +1,6 @@
 #include "RegionBuilder.hpp"
+#include "../geometry/IntersectionDetector.hpp"
+#include "../logic/Graph.hpp"
 #include <cmath>
 #include <algorithm>
 #include <functional>
@@ -55,6 +57,59 @@ static bool getIntersection(double x1, double y1, double x2, double y2,
 
 std::vector<LocalSegment> RegionBuilder::splitSegmentsAtIntersections(const std::vector<LocalSegment>& segments) {
     std::vector<LocalSegment> result;
+    if (segments.empty()) {
+        return result;
+    }
+
+    Graph tempGraph;
+    tempGraph.nodes.reserve(segments.size() * 2);
+    tempGraph.edges.reserve(segments.size());
+
+    double minX = segments[0].x1;
+    double maxX = segments[0].x1;
+    double minY = segments[0].y1;
+    double maxY = segments[0].y1;
+
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const auto& seg = segments[i];
+
+        const int u = static_cast<int>(tempGraph.nodes.size());
+        tempGraph.nodes.push_back({u, seg.x1, seg.y1});
+
+        const int v = static_cast<int>(tempGraph.nodes.size());
+        tempGraph.nodes.push_back({v, seg.x2, seg.y2});
+
+        tempGraph.edges.push_back({static_cast<int>(i), u, v, -1});
+
+        minX = std::min(minX, std::min(seg.x1, seg.x2));
+        maxX = std::max(maxX, std::max(seg.x1, seg.x2));
+        minY = std::min(minY, std::min(seg.y1, seg.y2));
+        maxY = std::max(maxY, std::max(seg.y1, seg.y2));
+    }
+
+    if (std::abs(maxX - minX) < EPSILON) {
+        maxX = minX + 1.0;
+    }
+    if (std::abs(maxY - minY) < EPSILON) {
+        maxY = minY + 1.0;
+    }
+
+    SpatialGrid tempGrid(minX, maxX, minY, maxY, static_cast<int>(tempGraph.nodes.size()), static_cast<int>(tempGraph.edges.size()));
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const auto& seg = segments[i];
+        tempGrid.insertEdge(static_cast<int>(i), seg.x1, seg.y1, seg.x2, seg.y2);
+    }
+
+    std::vector<std::vector<Point>> detectorIntersections(segments.size());
+    const auto intersections = IntersectionDetector::findIntersections(tempGraph, tempGrid);
+    for (const auto& intersection : intersections) {
+        if (intersection.edge1_id >= 0 && intersection.edge1_id < static_cast<int>(segments.size())) {
+            detectorIntersections[intersection.edge1_id].push_back({intersection.x, intersection.y});
+        }
+        if (intersection.edge2_id >= 0 && intersection.edge2_id < static_cast<int>(segments.size())) {
+            detectorIntersections[intersection.edge2_id].push_back({intersection.x, intersection.y});
+        }
+    }
 
     // PRECOMPUTE BOUNDS HERE
     std::vector<SegmentBounds> bounds(segments.size());
@@ -62,36 +117,30 @@ std::vector<LocalSegment> RegionBuilder::splitSegmentsAtIntersections(const std:
         bounds[i] = getBounds(segments[i]);
     }
 
-    // O(N^2) intersection finding. Safe because N is bounded by the small local ROI.
+    // Intersections are discovered with IntersectionDetector; this loop only adds collinearity split points.
     for (size_t i = 0; i < segments.size(); ++i) {
-        const auto boundsI = getBounds(segments[i]);
         std::vector<Point> splits;
         splits.push_back({segments[i].x1, segments[i].y1});
         splits.push_back({segments[i].x2, segments[i].y2});
+        splits.insert(splits.end(), detectorIntersections[i].begin(), detectorIntersections[i].end());
 
         for (size_t j = 0; j < segments.size(); ++j) {
             if (i == j) continue;
             if (!boundsOverlap(bounds[i], bounds[j])) continue;
-            double ix, iy;
-            if (getIntersection(segments[i].x1, segments[i].y1, segments[i].x2, segments[i].y2,
-                                segments[j].x1, segments[j].y1, segments[j].x2, segments[j].y2, ix, iy)) {
-                splits.push_back({ix, iy});
-            } else {
-                // Collinearity fallback: Check if endpoints of J lie on segment I
-                auto isPointOnSegment = [](double px, double py, const LocalSegment& seg) {
-                    double cross = (px - seg.x1) * (seg.y2 - seg.y1) - (py - seg.y1) * (seg.x2 - seg.x1);
-                    if (std::abs(cross) > RegionBuilder::EPSILON) return false; // Not collinear
-                    
-                    // Check if within bounds
-                    double minX = std::min(seg.x1, seg.x2), maxX = std::max(seg.x1, seg.x2);
-                    double minY = std::min(seg.y1, seg.y2), maxY = std::max(seg.y1, seg.y2);
-                    return px >= minX - RegionBuilder::EPSILON && px <= maxX + RegionBuilder::EPSILON &&
-                        py >= minY - RegionBuilder::EPSILON && py <= maxY + RegionBuilder::EPSILON;
-                };
 
-                if (isPointOnSegment(segments[j].x1, segments[j].y1, segments[i])) splits.push_back({segments[j].x1, segments[j].y1});
-                if (isPointOnSegment(segments[j].x2, segments[j].y2, segments[i])) splits.push_back({segments[j].x2, segments[j].y2});
-            }
+            // Collinearity fallback: Check if endpoints of J lie on segment I.
+            auto isPointOnSegment = [](double px, double py, const LocalSegment& seg) {
+                double cross = (px - seg.x1) * (seg.y2 - seg.y1) - (py - seg.y1) * (seg.x2 - seg.x1);
+                if (std::abs(cross) > RegionBuilder::EPSILON) return false;
+
+                double minSegX = std::min(seg.x1, seg.x2), maxSegX = std::max(seg.x1, seg.x2);
+                double minSegY = std::min(seg.y1, seg.y2), maxSegY = std::max(seg.y1, seg.y2);
+                return px >= minSegX - RegionBuilder::EPSILON && px <= maxSegX + RegionBuilder::EPSILON &&
+                    py >= minSegY - RegionBuilder::EPSILON && py <= maxSegY + RegionBuilder::EPSILON;
+            };
+
+            if (isPointOnSegment(segments[j].x1, segments[j].y1, segments[i])) splits.push_back({segments[j].x1, segments[j].y1});
+            if (isPointOnSegment(segments[j].x2, segments[j].y2, segments[i])) splits.push_back({segments[j].x2, segments[j].y2});
         }
 
         // Sort points along the segment to create ordered sub-segments.

@@ -211,19 +211,33 @@ SpatialGrid::SpatialGrid()
     : minX(0), maxX(0), minY(0), maxY(0),
       cellWidth(1), cellHeight(1), numCellsX(0), numCellsY(0) {}
 
-SpatialGrid::SpatialGrid(double minX, double maxX, double minY, double maxY, int expectedTotalNodes)
+SpatialGrid::SpatialGrid(double minX,
+                         double maxX,
+                         double minY,
+                         double maxY,
+                         int expectedTotalNodes,
+                         int expectedTotalEdges)
     : minX(minX), maxX(maxX), minY(minY), maxY(maxY)
 {
+    constexpr double kTargetNodesPerCell = 5.0;
+    constexpr double kTargetEdgesPerCell = 12.0;
+    constexpr int kMaxTotalCells = 250000;
+
     double width = maxX - minX;
     double height = maxY - minY;
 
     if (width == 0.0) width = 1.0;
     if (height == 0.0) height = 1.0;
 
-    double targetTotalCells = static_cast<double>(expectedTotalNodes) / 5.0;
-    if (targetTotalCells < 1.0) targetTotalCells = 1.0;
+    const double nodeDrivenCells = std::max(1.0, static_cast<double>(std::max(0, expectedTotalNodes)) / kTargetNodesPerCell);
+    const double edgeDrivenCells = (expectedTotalEdges > 0)
+        ? std::max(1.0, static_cast<double>(expectedTotalEdges) / kTargetEdgesPerCell)
+        : 1.0;
+    double targetTotalCells = std::max(nodeDrivenCells, edgeDrivenCells);
+    targetTotalCells = std::clamp(targetTotalCells, 1.0, static_cast<double>(kMaxTotalCells));
 
-    const double aspectRatio = width / height;
+    const double aspectRatioRaw = width / height;
+    const double aspectRatio = (std::isfinite(aspectRatioRaw) && aspectRatioRaw > 0.0) ? aspectRatioRaw : 1.0;
     numCellsX = static_cast<int>(std::sqrt(targetTotalCells * aspectRatio));
     numCellsX = std::max(1, numCellsX);
 

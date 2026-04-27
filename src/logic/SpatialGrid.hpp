@@ -23,8 +23,13 @@ public:
     // Default constructor (required so PlanarizedGraph can declare it as a member and initialize it later)
     SpatialGrid();
 
-    // Generic Geometric Constructor
-    SpatialGrid(double minX, double maxX, double minY, double maxY, int expectedTotalNodes);
+    // Generic geometric constructor with optional expected edge load for density-aware partitioning.
+    SpatialGrid(double minX,
+                double maxX,
+                double minY,
+                double maxY,
+                int expectedTotalNodes,
+                int expectedTotalEdges = -1);
 
     // Getters for the Floating Frame
     double getMinX() const { return minX; }

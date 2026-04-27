@@ -6,12 +6,16 @@
 *.ipdb
 *.iobj
 *.exe
+*.ps1
+*.txt
 /build/
 /bin/
 .vscode/
 .DS_Store
 src/batch_results.csv
+src/*.csv
 
 # Ensure samples are always included
 !src/data/samples/
 !src/data/samples/**
+!src/CMakeLists.txt

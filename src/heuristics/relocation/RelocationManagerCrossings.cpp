@@ -49,11 +49,52 @@ std::unordered_set<int> collectCandidateEdgesForSegment(const SpatialGrid& grid,
     return candidateEdges;
 }
 
+std::unordered_set<int> collectCandidateOriginalEdgesForSegment(const PlanarizedGraph& pGraph,
+                                                                const SpatialGrid& grid,
+                                                                double x1,
+                                                                double y1,
+                                                                double x2,
+                                                                double y2) {
+    const auto candidatePlanarEdges = collectCandidateEdgesForSegment(grid, x1, y1, x2, y2);
+    std::unordered_set<int> candidateOriginalEdges;
+    candidateOriginalEdges.reserve(candidatePlanarEdges.size());
+
+    for (int planarEdgeId : candidatePlanarEdges) {
+        if (!pGraph.hasEdge(planarEdgeId)) continue;
+        candidateOriginalEdges.insert(pGraph.getEdge(planarEdgeId).original_edge_id);
+    }
+
+    return candidateOriginalEdges;
+}
+
 } // namespace
 
 std::pair<int, int> RelocationManager::normalizeEdgePair(int edgeA, int edgeB) const {
     if (edgeA <= edgeB) return {edgeA, edgeB};
     return {edgeB, edgeA};
+}
+
+void RelocationManager::resetStepCrossingCaches() const {
+    m_pairToOriginalEdgeCache.clear();
+    m_pairToOriginalEdgeCacheValid = false;
+    m_originalEdgeEndpointsCache.clear();
+}
+
+void RelocationManager::ensurePairToOriginalEdgeCache() const {
+    if (m_pairToOriginalEdgeCacheValid) {
+        return;
+    }
+
+    m_pairToOriginalEdgeCache.clear();
+    m_pairToOriginalEdgeCache.reserve(m_pGraph.edges.size());
+    m_pGraph.forEachEdge([&](int, const PlanarizedGraph::PlanarEdge& edge) {
+        const int a = std::min(edge.u_id, edge.v_id);
+        const int b = std::max(edge.u_id, edge.v_id);
+        const long long key = (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
+        m_pairToOriginalEdgeCache[key] = edge.original_edge_id;
+    });
+
+    m_pairToOriginalEdgeCacheValid = true;
 }
 
 int RelocationManager::computeActiveSideForBoundary(int currentFaceId,
@@ -170,13 +211,7 @@ std::vector<std::pair<int, int>> RelocationManager::collectIncidentEdgesForNode(
     const auto& startNode = m_pGraph.getNode(nodeId);
     if (startNode.type != PlanarizedGraph::NodeType::ORIGINAL) return incident;
 
-    std::unordered_map<long long, int> pairToOriginalEdge;
-    m_pGraph.forEachEdge([&](int, const PlanarizedGraph::PlanarEdge& edge) {
-        const int a = std::min(edge.u_id, edge.v_id);
-        const int b = std::max(edge.u_id, edge.v_id);
-        const long long key = (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
-        pairToOriginalEdge[key] = edge.original_edge_id;
-    });
+    ensurePairToOriginalEdgeCache();
 
     std::unordered_set<int> seenOriginalEdges;
     for (int firstHopId : startNode.adjacent_planar_nodes) {
@@ -184,8 +219,8 @@ std::vector<std::pair<int, int>> RelocationManager::collectIncidentEdgesForNode(
         const int b = std::max(nodeId, firstHopId);
         const long long key = (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
 
-        auto edgeIt = pairToOriginalEdge.find(key);
-        if (edgeIt == pairToOriginalEdge.end()) continue;
+        auto edgeIt = m_pairToOriginalEdgeCache.find(key);
+        if (edgeIt == m_pairToOriginalEdgeCache.end()) continue;
         const int originalEdgeId = edgeIt->second;
         if (!seenOriginalEdges.insert(originalEdgeId).second) continue;
 
@@ -306,9 +341,15 @@ void RelocationManager::collectTransitionCrossingPairs(int variableNodeId,
 }
 
 std::optional<std::pair<int, int>> RelocationManager::findOriginalEdgeEndpoints(int originalEdgeId) const {
+    auto cached = m_originalEdgeEndpointsCache.find(originalEdgeId);
+    if (cached != m_originalEdgeEndpointsCache.end()) {
+        return cached->second;
+    }
+
     if (originalEdgeId < 0 ||
         originalEdgeId >= static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size()) ||
         m_pGraph.originalEdgeToPlanarEdges[originalEdgeId].empty()) {
+        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
         return std::nullopt;
     }
 
@@ -341,7 +382,10 @@ std::optional<std::pair<int, int>> RelocationManager::findOriginalEdgeEndpoints(
     };
 
     const int anyPlanarEdgeId = m_pGraph.originalEdgeToPlanarEdges[originalEdgeId].front();
-    if (!m_pGraph.hasEdge(anyPlanarEdgeId)) return std::nullopt;
+    if (!m_pGraph.hasEdge(anyPlanarEdgeId)) {
+        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
+        return std::nullopt;
+    }
     const auto& e = m_pGraph.getEdge(anyPlanarEdgeId);
 
     const int a = e.u_id;
@@ -349,8 +393,14 @@ std::optional<std::pair<int, int>> RelocationManager::findOriginalEdgeEndpoints(
     auto endA = traverseToOriginal(a, b);
     auto endB = traverseToOriginal(b, a);
 
-    if (!endA.has_value() || !endB.has_value()) return std::nullopt;
-    return std::make_pair(*endA, *endB);
+    if (!endA.has_value() || !endB.has_value()) {
+        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
+        return std::nullopt;
+    }
+
+    const auto endpoints = std::make_pair(*endA, *endB);
+    m_originalEdgeEndpointsCache[originalEdgeId] = endpoints;
+    return endpoints;
 }
 
 std::optional<std::pair<double, double>> RelocationManager::intersectOriginalEdgesForMove(int edgeA,
@@ -400,23 +450,6 @@ std::optional<std::pair<double, double>> RelocationManager::intersectOriginalEdg
     return std::make_pair(x1 + t * (x2 - x1), y1 + t * (y2 - y1));
 }
 
-int RelocationManager::findExistingCrossingNodeForPair(int edgeA, int edgeB) const {
-    const auto target = normalizeEdgePair(edgeA, edgeB);
-
-    int found = -1;
-    m_pGraph.forEachNode([&](int nodeId, const PlanarizedGraph::PlanarNode& node) {
-        if (found != -1) return;
-        if (node.type != PlanarizedGraph::NodeType::CROSSING) return;
-
-        const auto crossingPair = normalizeEdgePair(node.original_edge_1, node.original_edge_2);
-        if (crossingPair == target) {
-            found = nodeId;
-        }
-    });
-
-    return found;
-}
-
 int RelocationManager::countGlobalCrossingsForVariableAtPosition(
     int variableNodeId,
     double movedX,
@@ -447,7 +480,8 @@ int RelocationManager::countGlobalCrossingsForVariableAtPosition(
         auto movedB = movedPointForNode(movedEndpoints->second);
         if (!movedA.has_value() || !movedB.has_value()) continue;
 
-        const auto candidateEdges = collectCandidateEdgesForSegment(
+        const auto candidateEdges = collectCandidateOriginalEdgesForSegment(
+            m_pGraph,
             grid,
             movedA->first,
             movedA->second,
@@ -565,7 +599,7 @@ CrossingUpdatePlan RelocationManager::buildCrossingUpdatePlan(int variableNodeId
     }
 
     for (const auto& p : plan.disappearingPairs) {
-        const int crossingId = findExistingCrossingNodeForPair(p.first, p.second);
+        const int crossingId = m_pGraph.getCrossingNodeForPair(p.first, p.second);
         if (crossingId != -1) {
             plan.crossingNodeIdsToDestroy.push_back(crossingId);
         }
@@ -590,7 +624,7 @@ void RelocationManager::applyCrossingInsertions(int variableNodeId,
         const int edgeA = p.first;
         const int edgeB = p.second;
 
-        if (findExistingCrossingNodeForPair(edgeA, edgeB) != -1) {
+        if (m_pGraph.getCrossingNodeForPair(edgeA, edgeB) != -1) {
             continue;
         }
 
@@ -604,31 +638,75 @@ void RelocationManager::applyCrossingInsertions(int variableNodeId,
 void RelocationManager::reconcileCrossingsForMovedEdges(const std::unordered_set<int>& movedOriginalEdges) {
     if (movedOriginalEdges.empty()) return;
 
-    std::vector<int> allOriginalEdges;
-    allOriginalEdges.reserve(m_pGraph.originalEdgeToPlanarEdges.size());
-    for (int origEdgeId = 0; origEdgeId < static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size()); ++origEdgeId) {
-        if (m_pGraph.originalEdgeToPlanarEdges[origEdgeId].empty()) continue;
-        allOriginalEdges.push_back(origEdgeId);
-    }
+    const auto& grid = m_pGraph.getGrid();
+    if (grid.getNumCells() == 0) return;
 
-    std::set<std::pair<int, int>> processed;
+    std::unordered_set<std::uint64_t> processed;
+    processed.reserve(movedOriginalEdges.size() * 32);
+
+    auto pairKey = [](int a, int b) {
+        const std::uint64_t lo = static_cast<std::uint64_t>(std::min(a, b));
+        const std::uint64_t hi = static_cast<std::uint64_t>(std::max(a, b));
+        return (lo << 32) | hi;
+    };
 
     for (int movedEdgeId : movedOriginalEdges) {
-        for (int otherEdgeId : allOriginalEdges) {
+        auto movedEndpoints = findOriginalEdgeEndpoints(movedEdgeId);
+        if (!movedEndpoints.has_value()) continue;
+        if (!m_pGraph.hasNode(movedEndpoints->first) || !m_pGraph.hasNode(movedEndpoints->second)) continue;
+
+        const auto& movedA = m_pGraph.getNode(movedEndpoints->first);
+        const auto& movedB = m_pGraph.getNode(movedEndpoints->second);
+
+        auto candidateOtherEdges = collectCandidateOriginalEdgesForSegment(
+            m_pGraph,
+            grid,
+            movedA.x,
+            movedA.y,
+            movedB.x,
+            movedB.y
+        );
+
+        // Also include edge pairs that currently have crossing nodes on this moved edge.
+        // This prevents stale crossings from surviving if they moved outside nearby grid cells.
+        if (movedEdgeId >= 0 && movedEdgeId < static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size())) {
+            for (int planarEdgeId : m_pGraph.originalEdgeToPlanarEdges[movedEdgeId]) {
+                if (!m_pGraph.hasEdge(planarEdgeId)) continue;
+                const auto& planarEdge = m_pGraph.getEdge(planarEdgeId);
+
+                const int endpoints[2] = {planarEdge.u_id, planarEdge.v_id};
+                for (int nodeId : endpoints) {
+                    if (!m_pGraph.hasNode(nodeId)) continue;
+                    const auto& node = m_pGraph.getNode(nodeId);
+                    if (node.type != PlanarizedGraph::NodeType::CROSSING) continue;
+
+                    if (node.original_edge_1 == movedEdgeId && node.original_edge_2 >= 0) {
+                        candidateOtherEdges.insert(node.original_edge_2);
+                    } else if (node.original_edge_2 == movedEdgeId && node.original_edge_1 >= 0) {
+                        candidateOtherEdges.insert(node.original_edge_1);
+                    }
+                }
+            }
+        }
+
+        for (int otherEdgeId : candidateOtherEdges) {
             if (movedEdgeId == otherEdgeId) continue;
+            if (otherEdgeId < 0) continue;
+
+            const std::uint64_t key = pairKey(movedEdgeId, otherEdgeId);
+            if (!processed.insert(key).second) continue;
 
             const auto pair = normalizeEdgePair(movedEdgeId, otherEdgeId);
-            if (!processed.insert(pair).second) continue;
 
-            auto epA = findOriginalEdgeEndpoints(pair.first);
-            auto epB = findOriginalEdgeEndpoints(pair.second);
-            if (!epA.has_value() || !epB.has_value()) continue;
+            auto otherEndpoints = findOriginalEdgeEndpoints(pair.second);
+            if (!otherEndpoints.has_value()) continue;
 
             const bool sharesEndpoint =
-                epA->first == epB->first || epA->first == epB->second ||
-                epA->second == epB->first || epA->second == epB->second;
+                movedEndpoints->first == otherEndpoints->first || movedEndpoints->first == otherEndpoints->second ||
+                movedEndpoints->second == otherEndpoints->first || movedEndpoints->second == otherEndpoints->second;
+
+            const int existingId = m_pGraph.getCrossingNodeForPair(pair.first, pair.second);
             if (sharesEndpoint) {
-                const int existingId = findExistingCrossingNodeForPair(pair.first, pair.second);
                 if (existingId != -1) {
                     if (m_pGraph.hasNode(existingId) &&
                         m_pGraph.getNode(existingId).type == PlanarizedGraph::NodeType::CROSSING) {
@@ -639,7 +717,6 @@ void RelocationManager::reconcileCrossingsForMovedEdges(const std::unordered_set
             }
 
             auto intersection = intersectOriginalEdgesForMove(pair.first, pair.second, -1, 0.0, 0.0);
-            const int existingId = findExistingCrossingNodeForPair(pair.first, pair.second);
 
             if (intersection.has_value()) {
                 if (existingId == -1) {
@@ -711,31 +788,6 @@ RelocationStepResult RelocationManager::performRelocationStep() {
 
     applyCrossingRemovals(plan);
     m_pGraph.updateNodePosition(variableNodeId, movedX, movedY);
-
-    std::vector<int> crossingsToRefresh;
-    crossingsToRefresh.reserve(32);
-    m_pGraph.forEachNode([&](int nodeId, const PlanarizedGraph::PlanarNode& node) {
-        if (node.type != PlanarizedGraph::NodeType::CROSSING) return;
-        if (movedOriginalEdges.count(node.original_edge_1) == 0 &&
-            movedOriginalEdges.count(node.original_edge_2) == 0) {
-            return;
-        }
-        crossingsToRefresh.push_back(nodeId);
-    });
-
-    for (int crossingId : crossingsToRefresh) {
-        if (!m_pGraph.hasNode(crossingId)) continue;
-        const auto& crossing = m_pGraph.getNode(crossingId);
-        auto newPos = intersectOriginalEdgesForMove(
-            crossing.original_edge_1,
-            crossing.original_edge_2,
-            variableNodeId,
-            movedX,
-            movedY
-        );
-        if (!newPos.has_value()) continue;
-        m_pGraph.updateNodePosition(crossingId, newPos->first, newPos->second);
-    }
 
     applyCrossingInsertions(variableNodeId, movedX, movedY, plan);
     reconcileCrossingsForMovedEdges(movedOriginalEdges);

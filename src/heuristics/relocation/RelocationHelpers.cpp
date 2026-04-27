@@ -84,12 +84,13 @@ std::unordered_set<int> collectIncidentOriginalEdgeIds(int nodeId, const Planari
 
     if (!pGraph.hasNode(nodeId)) return incidentOriginalEdgeIds;
 
-    // If you have adjacency, use it here instead of forEachEdge over all edges.
-    pGraph.forEachEdge([&](int /*edgeId*/, const PlanarizedGraph::PlanarEdge& planarEdge) {
-        if (planarEdge.u_id == nodeId || planarEdge.v_id == nodeId) {
-            incidentOriginalEdgeIds.insert(planarEdge.original_edge_id);
-        }
-    });
+    const auto& node = pGraph.getNode(nodeId);
+    incidentOriginalEdgeIds.reserve(node.incident_planar_edges.size());
+
+    for (int edgeId : node.incident_planar_edges) {
+        if (!pGraph.hasEdge(edgeId)) continue;
+        incidentOriginalEdgeIds.insert(pGraph.getEdge(edgeId).original_edge_id);
+    }
 
     return incidentOriginalEdgeIds;
 }
