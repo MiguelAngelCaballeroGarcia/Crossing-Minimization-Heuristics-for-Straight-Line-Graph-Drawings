@@ -354,7 +354,7 @@ std::optional<std::pair<int, double>> RelocationManager::chooseTargetFace(const 
         bestDelta = std::min(bestDelta, analysis.faceWeights[faceId]);
     }
 
-    if (bestDelta >= 0) {
+    if (bestDelta > 0) {
         return std::nullopt;
     }
 
