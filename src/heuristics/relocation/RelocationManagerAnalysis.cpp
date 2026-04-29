@@ -41,98 +41,24 @@ LocalRegionAnalysis RelocationManager::analyzeLocalRegions(const RegionOfInteres
 
 std::vector<int> RelocationManager::computeFaceGlobalCrossingDeltas(const LocalRegionAnalysis& analysis,
                                                                     int variableNodeId) const {
+    // New exact method: for each face, choose an interior point and compute the
+    // exact global crossing delta by evaluating the full grid scan at that point.
     std::vector<int> deltas(analysis.dualGraph.faces.size(), 0);
 
-    if (analysis.sourceFaceId < 0 ||
-        analysis.sourceFaceId >= static_cast<int>(analysis.dualGraph.faces.size())) {
-        return deltas;
+    // Build the set of original incident edges for the variable node once
+    std::unordered_set<int> variableIncidentEdges;
+    for (const auto& pr : collectSelectedNeighborEdges(variableNodeId)) {
+        const int orig = pr.second;
+        if (orig >= 0) variableIncidentEdges.insert(orig);
     }
 
-    auto makeFacePairKey = [](int a, int b) {
-        const std::uint64_t lo = static_cast<std::uint64_t>(std::min(a, b));
-        const std::uint64_t hi = static_cast<std::uint64_t>(std::max(a, b));
-        return (lo << 32) | hi;
-    };
-
-    std::unordered_map<std::uint64_t, DualGraphEdge> treeEdgeByFaces;
-    treeEdgeByFaces.reserve(analysis.dualTreeEdges.size() * 2);
-    for (const auto& edge : analysis.dualTreeEdges) {
-        treeEdgeByFaces[makeFacePairKey(edge.faceA, edge.faceB)] = edge;
-    }
-
-    auto findBoundaryEdge = [&](int faceA, int faceB) -> std::optional<DualGraphEdge> {
-        const auto key = makeFacePairKey(faceA, faceB);
-        auto treeIt = treeEdgeByFaces.find(key);
-        if (treeIt != treeEdgeByFaces.end()) {
-            return treeIt->second;
-        }
-
-        for (const auto& edge : analysis.dualGraph.adjacency) {
-            if ((edge.faceA == faceA && edge.faceB == faceB) ||
-                (edge.faceA == faceB && edge.faceB == faceA)) {
-                return edge;
-            }
-        }
-        return std::nullopt;
-    };
-
-    std::vector<std::vector<int>> children(analysis.faceParent.size());
-    for (int faceId = 0; faceId < static_cast<int>(analysis.faceParent.size()); ++faceId) {
-        const int parent = analysis.faceParent[faceId];
-        if (parent >= 0 && parent < static_cast<int>(children.size())) {
-            children[parent].push_back(faceId);
-        }
-    }
-
-    std::queue<int> q;
-    std::vector<std::uint8_t> visited(analysis.dualGraph.faces.size(), 0);
-    q.push(analysis.sourceFaceId);
-    visited[analysis.sourceFaceId] = 1;
-
-    while (!q.empty()) {
-        const int currentFace = q.front();
-        q.pop();
-
-        if (currentFace < 0 || currentFace >= static_cast<int>(children.size())) continue;
-
-        for (int childFace : children[currentFace]) {
-            auto boundary = findBoundaryEdge(currentFace, childFace);
-            if (!boundary.has_value()) {
-                continue;
-            }
-
-            std::vector<std::pair<int, int>> disappear;
-            std::vector<std::pair<int, int>> appear;
-            collectTransitionCrossingPairs(variableNodeId,
-                                           currentFace,
-                                           *boundary,
-                                           disappear,
-                                           appear,
-                                           analysis.dualGraph);
-
-            std::set<std::pair<int, int>> disappearSet;
-            std::set<std::pair<int, int>> appearSet;
-            for (const auto& p : disappear) disappearSet.insert(normalizeEdgePair(p.first, p.second));
-            for (const auto& p : appear) appearSet.insert(normalizeEdgePair(p.first, p.second));
-
-            int boundaryDelta = 0;
-            for (const auto& p : appearSet) {
-                if (disappearSet.find(p) == disappearSet.end()) {
-                    ++boundaryDelta;
-                }
-            }
-            for (const auto& p : disappearSet) {
-                if (appearSet.find(p) == appearSet.end()) {
-                    --boundaryDelta;
-                }
-            }
-
-            deltas[childFace] = deltas[currentFace] + boundaryDelta;
-            if (!visited[childFace]) {
-                visited[childFace] = 1;
-                q.push(childFace);
-            }
-        }
+    for (const auto& face : analysis.dualGraph.faces) {
+        if (face.vertices.empty()) continue;
+        auto pt = chooseInteriorPointInFace(face);
+        if (!pt.has_value()) continue;
+        const double tx = pt->first;
+        const double ty = pt->second;
+        deltas[face.id] = evaluateGlobalCrossingDeltaForMove(variableNodeId, tx, ty, variableIncidentEdges);
     }
 
     return deltas;
