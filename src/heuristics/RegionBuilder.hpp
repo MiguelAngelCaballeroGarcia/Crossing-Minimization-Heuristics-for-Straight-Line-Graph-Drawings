@@ -17,6 +17,7 @@ struct DualGraphEdge {
     int originalEdgeId; // The physical edge separating them (-1 for rays/borders)
     LocalSegmentType boundaryType; // ORIGINAL_SUBSEGMENT or RAY
     int raySourceNodeId; // For RAY type: which node the ray came from; otherwise -1
+    int rayEmittingNodeId; // For RAY type: which node the ray is emitted from; otherwise -1
     double x1;
     double y1;
     double x2;
@@ -67,6 +68,7 @@ private:
         int originalEdgeId;
         LocalSegmentType boundaryType; // Store segment type
         int raySourceNodeId = -1; // For RAY type: which node it came from
+        int rayEmittingNodeId = -1; // For RAY type: which node determines the ray direction
     };
 
     static std::vector<LocalSegment> splitSegmentsAtIntersections(const std::vector<LocalSegment>& segments);

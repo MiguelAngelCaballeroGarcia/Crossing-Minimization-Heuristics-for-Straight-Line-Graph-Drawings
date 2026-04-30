@@ -212,7 +212,10 @@ private:
     std::optional<std::pair<int, double>> chooseTargetFace(const LocalRegionAnalysis& analysis,
                                                            std::mt19937& rng) const;
     std::optional<std::pair<double, double>> chooseInteriorPointInFace(const Face& face) const;
-    void reconcileCrossingsForMovedEdges(const std::unordered_set<int>& movedOriginalEdges);
+    void reconcileCrossingsForMovedEdges(const std::unordered_set<int>& movedOriginalEdges, 
+                                        const CrossingUpdatePlan& plan,
+                                       int variableNodeId,
+                                       double movedX, double movedY);
     std::vector<int> computeFaceGlobalCrossingDeltas(const LocalRegionAnalysis& analysis,
                                                      int variableNodeId) const;
     void resetStepCrossingCaches() const;

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 
 namespace {
 
@@ -323,7 +324,6 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
     }
 
     const std::uint64_t pairKey = makeCrossingPairKey(edge1Id, edge2Id);
-
     int cId = getNextNodeId();
 
     PlanarNode& storedNode = nodes[cId];
@@ -337,7 +337,8 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
     grid.insertNode(cId, x, y);
     crossingPairToNode[pairKey] = cId;
 
-    auto rollbackCrossingCreation = [&]() {
+    auto rollbackCrossingCreation = [&](const std::string& reason) {
+        (void)reason;
         crossingPairToNode.erase(pairKey);
         grid.removeNode(cId, x, y);
         deactivateNode(cId);
@@ -355,7 +356,7 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
 
     for (int eId : affectedEdges) {
         if (eId < 0 || eId >= static_cast<int>(originalEdgeToPlanarEdges.size())) {
-            rollbackCrossingCreation();
+            rollbackCrossingCreation("Invalid original edge ID " + std::to_string(eId));
             return;
         }
 
@@ -363,9 +364,12 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
         int v = -1;
         bool found = false;
 
-        for (int pEdgeId : originalEdgeToPlanarEdges[eId]) {
+        auto& pEdges = originalEdgeToPlanarEdges[eId];
+
+        for (int pEdgeId : pEdges) {
             if (!hasEdge(pEdgeId)) continue;
             PlanarEdge& pe = getEdge(pEdgeId);
+
             if (isPointOnSegment(x, y, pe.u_id, pe.v_id)) {
                 u = pe.u_id;
                 v = pe.v_id;
@@ -375,7 +379,7 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
         }
 
         if (!found) {
-            rollbackCrossingCreation();
+            rollbackCrossingCreation("Point not found on any planar segment of original edge " + std::to_string(eId));
             return;
         }
 
@@ -398,9 +402,9 @@ void PlanarizedGraph::createCrossing(int edge1Id, int edge2Id, double x, double 
         updateNodeNeighbor(u, v, cId, eId);
         updateNodeNeighbor(v, u, cId, eId);
 
-        removePlanarEdge(u, v, eId);   // Grid syncs automatically!
-        addPlanarEdge(u, cId, eId);    // Grid syncs automatically!
-        addPlanarEdge(cId, v, eId);    // Grid syncs automatically!
+        removePlanarEdge(u, v, eId);
+        addPlanarEdge(u, cId, eId);
+        addPlanarEdge(cId, v, eId);
     }
 }
 

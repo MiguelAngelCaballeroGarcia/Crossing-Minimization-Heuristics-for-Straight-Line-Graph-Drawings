@@ -175,6 +175,7 @@ std::vector<LocalSegment> RegionBuilder::splitSegmentsAtIntersections(const std:
                 subseg.originalEdgeId = segments[i].originalEdgeId;
                 subseg.type = segments[i].type;
                 subseg.raySourceNodeId = segments[i].raySourceNodeId;
+                subseg.rayEmittingNodeId = segments[i].rayEmittingNodeId;
                 result.push_back(subseg);
             }
         }
@@ -209,8 +210,8 @@ DualGraph RegionBuilder::buildRegionsAndDualGraph(const std::vector<LocalSegment
         int he1_id = halfEdges.size();
         int he2_id = halfEdges.size() + 1;
 
-        halfEdges.push_back({he1_id, u, he2_id, -1, -1, seg.originalEdgeId, seg.type, seg.raySourceNodeId});
-        halfEdges.push_back({he2_id, v, he1_id, -1, -1, seg.originalEdgeId, seg.type, seg.raySourceNodeId});
+        halfEdges.push_back({he1_id, u, he2_id, -1, -1, seg.originalEdgeId, seg.type, seg.raySourceNodeId, seg.rayEmittingNodeId});
+        halfEdges.push_back({he2_id, v, he1_id, -1, -1, seg.originalEdgeId, seg.type, seg.raySourceNodeId, seg.rayEmittingNodeId});
     }
 
     // 2. Link Next pointers via angular sorting
@@ -310,6 +311,7 @@ DualGraph RegionBuilder::buildRegionsAndDualGraph(const std::vector<LocalSegment
                     halfEdges[heId].originalEdgeId,
                     halfEdges[heId].boundaryType,
                     halfEdges[heId].raySourceNodeId,
+                    halfEdges[heId].rayEmittingNodeId,
                     p1.x,
                     p1.y,
                     p2.x,

@@ -22,4 +22,8 @@ struct LocalSegment {
     // For RAY type: the node ID that the ray is shot from.
     // For other types: -1 (not applicable).
     int raySourceNodeId = -1;
+    
+    // For RAY type: the node ID that determines the ray direction (emitting node -> source node).
+    // For other types: -1 (not applicable).
+    int rayEmittingNodeId = -1;
 };

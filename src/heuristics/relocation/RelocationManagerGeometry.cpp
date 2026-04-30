@@ -335,6 +335,7 @@ void RelocationManager::appendRaysToLocalGeometry(std::vector<LocalSegment>& loc
             ray.originalEdgeId = -1;
             ray.type = LocalSegmentType::RAY;
             ray.raySourceNodeId = vId;
+            ray.rayEmittingNodeId = neighborId;
             localGeometry.push_back(ray);
         }
     });

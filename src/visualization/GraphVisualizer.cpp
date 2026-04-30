@@ -5,8 +5,6 @@
 #include <iostream>
 #include <limits>
 #include <cstdlib>
-#include <chrono>
-#include <iomanip>
 
 GraphVisualizer::GraphVisualizer(int screenWidth, int screenHeight, const char* title)
     : width(screenWidth), height(screenHeight) {
@@ -105,9 +103,7 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
             if (iterations > 0) {
                 RelocationManager manager(planarGraph);
                 manager.setROIBoundaryMethod(roiBoundaryMethod);
-                
-                auto startTime = std::chrono::high_resolution_clock::now();
-                
+
                 for (int i = 0; i < iterations; ++i) {
                     RelocationStepResult step = manager.performRelocationStep();
                     if (step.moved) {
@@ -117,15 +113,6 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
                         lastBatchExplorationUsed = true;
                     }
                 }
-                
-                auto endTime = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-                
-                std::cout << "[Timing] " << iterations << " iterations completed in "
-                          << duration.count() << " ms ("
-                          << std::fixed << std::setprecision(2) 
-                          << (double)duration.count() / iterations << " ms/iteration)\n";
-                std::cout.flush();
 
                 if (originalGraphPtr) {
                     Graph currentGraph = *originalGraphPtr;
@@ -448,10 +435,25 @@ void GraphVisualizer::render(const Graph& originalGraph, const PlanarizedGraph& 
 
     if (showPlanarized) {
         // Draw Edges
-        planarGraph.forEachEdge([&](int, const PlanarizedGraph::PlanarEdge& pEdge) {
+        planarGraph.forEachEdge([&](int id, const PlanarizedGraph::PlanarEdge& pEdge) { // 'id' is the edge ID
             const auto& u = planarGraph.getNode(pEdge.u_id);
             const auto& v = planarGraph.getNode(pEdge.v_id);
-            DrawLineEx({(float)u.x, (float)u.y}, {(float)v.x, (float)v.y}, 1.0f, DARKBLUE);
+            
+            Vector2 start = {(float)u.x, (float)u.y};
+            Vector2 end = {(float)v.x, (float)v.y};
+
+            // Draw the edge line
+            DrawLineEx(start, end, 1.0f, DARKBLUE);
+
+            // NEW: Draw the Edge ID if toggled
+            if (showNodeIds) {
+                // Calculate the midpoint of the edge
+                int midX = (int)((start.x + end.x) / 2.0f);
+                int midY = (int)((start.y + end.y) / 2.0f);
+
+                // Draw the ID (using a distinct color like DARKGREEN or GRAY)
+                DrawText(TextFormat("E%d", pEdge.original_edge_id), midX, midY, 10, DARKGREEN);
+            }
         });
 
         // Draw Nodes

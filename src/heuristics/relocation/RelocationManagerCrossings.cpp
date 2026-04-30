@@ -270,14 +270,21 @@ void RelocationManager::collectTransitionCrossingPairs(int variableNodeId,
 
     if (boundary.boundaryType == LocalSegmentType::ORIGINAL_SUBSEGMENT) {
         const int boundaryEdgeId = boundary.originalEdgeId;
-        if (boundaryEdgeId < 0) return;
+
+        if (boundaryEdgeId < 0) {
+            return;
+        }
 
         for (const auto& [neighborId, selectedEdgeId] : selectedEdges) {
-            if (selectedEdgeId < 0 || selectedEdgeId == boundaryEdgeId) continue;
+            if (selectedEdgeId < 0 || selectedEdgeId == boundaryEdgeId) {
+                continue;
+            }
 
-            if (!m_pGraph.hasNode(neighborId)) continue;
+            if (!m_pGraph.hasNode(neighborId)) {
+                continue;
+            }
+            
             const auto& neighborNode = m_pGraph.getNode(neighborId);
-
             const int side = whichSideOfLine(
                 neighborNode.x,
                 neighborNode.y,
@@ -286,55 +293,75 @@ void RelocationManager::collectTransitionCrossingPairs(int variableNodeId,
                 boundary.x2,
                 boundary.y2
             );
-            if (side == 0) continue;
+
+            if (side == 0) {
+                continue;
+            }
 
             const auto pair = normalizeEdgePair(selectedEdgeId, boundaryEdgeId);
-            if (side == activeSide) appear.push_back(pair);
-            else disappear.push_back(pair);
+            if (side == activeSide) {
+                appear.push_back(pair);
+            } else {
+                disappear.push_back(pair);
+            }
         }
         return;
     }
 
     if (boundary.boundaryType == LocalSegmentType::RAY) {
         const int raySourceId = boundary.raySourceNodeId;
-        if (raySourceId < 0) return;
+        const int rayEmittingId = boundary.rayEmittingNodeId;
+
+        if (raySourceId < 0 || rayEmittingId < 0) {
+            return;
+        }
+
+        // Find the specific edge ID connecting the variable node to the emitting node
+        int pivotEdgeId = -1;
+        for (const auto& [neighborId, edgeId] : selectedEdges) {
+            if (neighborId == rayEmittingId) {
+                pivotEdgeId = edgeId;
+                break;
+            }
+        }
+
+        if (pivotEdgeId < 0) {
+            return;
+        }
 
         const auto raySourceIncident = collectIncidentEdgesForNode(raySourceId);
-        for (const auto& [selectedNeighborId, selectedEdgeId] : selectedEdges) {
-            if (selectedEdgeId < 0) continue;
 
-            if (!m_pGraph.hasNode(selectedNeighborId)) continue;
-            const auto& selectedNode = m_pGraph.getNode(selectedNeighborId);
-            const int selectedSide = whichSideOfLine(
-                selectedNode.x,
-                selectedNode.y,
-                boundary.x1,
-                boundary.y1,
-                boundary.x2,
-                boundary.y2
+        for (const auto& [rayNeighborId, rayEdgeId] : raySourceIncident) {
+            // Standard validity checks
+            if (rayEdgeId < 0 || rayNeighborId == variableNodeId || rayEdgeId == pivotEdgeId) {
+                continue;
+            }
+
+            if (!m_pGraph.hasNode(rayNeighborId)) {
+                continue;
+            }
+
+            const auto& rayNeighborNode = m_pGraph.getNode(rayNeighborId);
+            const int rayNeighborSide = whichSideOfLine(
+                rayNeighborNode.x, rayNeighborNode.y,
+                boundary.x1, boundary.y1,
+                boundary.x2, boundary.y2
             );
-            if (selectedSide == 0) continue;
 
-            for (const auto& [rayNeighborId, rayEdgeId] : raySourceIncident) {
-                if (rayEdgeId < 0 || rayNeighborId == variableNodeId) continue;
-                if (rayEdgeId == selectedEdgeId) continue;
+            // Skip if the ray neighbor is collinear with the ray itself
+            if (rayNeighborSide == 0) {
+                continue;
+            }
 
-                if (!m_pGraph.hasNode(rayNeighborId)) continue;
-                const auto& rayNeighborNode = m_pGraph.getNode(rayNeighborId);
+            const auto pair = normalizeEdgePair(pivotEdgeId, rayEdgeId);
 
-                const int rayNeighborSide = whichSideOfLine(
-                    rayNeighborNode.x,
-                    rayNeighborNode.y,
-                    boundary.x1,
-                    boundary.y1,
-                    boundary.x2,
-                    boundary.y2
-                );
-                if (rayNeighborSide == 0) continue;
+            // LOGIC: The pivot edge sweeps from 'activeSide' to the opposite side.
+            bool isAppear = (rayNeighborSide != activeSide);
 
-                const auto pair = normalizeEdgePair(selectedEdgeId, rayEdgeId);
-                if (selectedSide == activeSide) appear.push_back(pair);
-                else disappear.push_back(pair);
+            if (isAppear) {
+                appear.push_back(pair);
+            } else {
+                disappear.push_back(pair);
             }
         }
     }
@@ -579,8 +606,12 @@ CrossingUpdatePlan RelocationManager::buildCrossingUpdatePlan(int variableNodeId
                                        localAppear,
                                        analysis.dualGraph);
 
-        for (const auto& p : localDisappear) disappearSet.insert(normalizeEdgePair(p.first, p.second));
-        for (const auto& p : localAppear) appearSet.insert(normalizeEdgePair(p.first, p.second));
+        for (const auto& p : localDisappear) {
+            disappearSet.insert(normalizeEdgePair(p.first, p.second));
+        }
+        for (const auto& p : localAppear) {
+            appearSet.insert(normalizeEdgePair(p.first, p.second));
+        }
 
         if (boundary.faceA == currentFace) currentFace = boundary.faceB;
         else if (boundary.faceB == currentFace) currentFace = boundary.faceA;
@@ -608,10 +639,12 @@ CrossingUpdatePlan RelocationManager::buildCrossingUpdatePlan(int variableNodeId
     return plan;
 }
 
+// These functions are kept for header compatibility but bypassed by the Wipe and Rebuild strategy.
 void RelocationManager::applyCrossingRemovals(const CrossingUpdatePlan& plan) {
     for (int crossingNodeId : plan.crossingNodeIdsToDestroy) {
         if (!m_pGraph.hasNode(crossingNodeId)) continue;
-        if (m_pGraph.getNode(crossingNodeId).type != PlanarizedGraph::NodeType::CROSSING) continue;
+        const auto& node = m_pGraph.getNode(crossingNodeId);
+        if (node.type != PlanarizedGraph::NodeType::CROSSING) continue;
         m_pGraph.destroyCrossing(crossingNodeId);
     }
 }
@@ -629,115 +662,79 @@ void RelocationManager::applyCrossingInsertions(int variableNodeId,
         }
 
         const auto intersection = intersectOriginalEdgesForMove(edgeA, edgeB, variableNodeId, movedX, movedY);
-        if (!intersection.has_value()) continue;
-
+        if (!intersection.has_value()) {
+            continue;
+        }
         m_pGraph.createCrossing(edgeA, edgeB, intersection->first, intersection->second);
     }
 }
 
-void RelocationManager::reconcileCrossingsForMovedEdges(const std::unordered_set<int>& movedOriginalEdges) {
+// REFACTORED VERSION: Wipe is handled in performRelocationStep. This solely handles the clean rebuild.
+void RelocationManager::reconcileCrossingsForMovedEdges(
+    const std::unordered_set<int>& movedOriginalEdges,
+    const CrossingUpdatePlan& plan,
+    int variableNodeId,
+    double movedX, double movedY
+) {
     if (movedOriginalEdges.empty()) return;
 
     const auto& grid = m_pGraph.getGrid();
     if (grid.getNumCells() == 0) return;
 
     std::unordered_set<std::uint64_t> processed;
-    processed.reserve(movedOriginalEdges.size() * 32);
-
-    auto pairKey = [](int a, int b) {
+    auto getPairKey = [](int a, int b) {
         const std::uint64_t lo = static_cast<std::uint64_t>(std::min(a, b));
         const std::uint64_t hi = static_cast<std::uint64_t>(std::max(a, b));
         return (lo << 32) | hi;
     };
 
-    for (int movedEdgeId : movedOriginalEdges) {
-        auto movedEndpoints = findOriginalEdgeEndpoints(movedEdgeId);
-        if (!movedEndpoints.has_value()) continue;
-        if (!m_pGraph.hasNode(movedEndpoints->first) || !m_pGraph.hasNode(movedEndpoints->second)) continue;
-
-        const auto& movedA = m_pGraph.getNode(movedEndpoints->first);
-        const auto& movedB = m_pGraph.getNode(movedEndpoints->second);
-
-        auto candidateOtherEdges = collectCandidateOriginalEdgesForSegment(
-            m_pGraph,
-            grid,
-            movedA.x,
-            movedA.y,
-            movedB.x,
-            movedB.y
-        );
-
-        // Also include edge pairs that currently have crossing nodes on this moved edge.
-        // This prevents stale crossings from surviving if they moved outside nearby grid cells.
-        if (movedEdgeId >= 0 && movedEdgeId < static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size())) {
-            for (int planarEdgeId : m_pGraph.originalEdgeToPlanarEdges[movedEdgeId]) {
-                if (!m_pGraph.hasEdge(planarEdgeId)) continue;
-                const auto& planarEdge = m_pGraph.getEdge(planarEdgeId);
-
-                const int endpoints[2] = {planarEdge.u_id, planarEdge.v_id};
-                for (int nodeId : endpoints) {
-                    if (!m_pGraph.hasNode(nodeId)) continue;
-                    const auto& node = m_pGraph.getNode(nodeId);
-                    if (node.type != PlanarizedGraph::NodeType::CROSSING) continue;
-
-                    if (node.original_edge_1 == movedEdgeId && node.original_edge_2 >= 0) {
-                        candidateOtherEdges.insert(node.original_edge_2);
-                    } else if (node.original_edge_2 == movedEdgeId && node.original_edge_1 >= 0) {
-                        candidateOtherEdges.insert(node.original_edge_1);
-                    }
-                }
+    // 1. Verify appearing pairs from the plan
+    for (const auto& planPair : plan.appearingPairs) {
+        const auto pair = normalizeEdgePair(planPair.first, planPair.second);
+        const std::uint64_t key = getPairKey(pair.first, pair.second);
+        
+        auto intersection = intersectOriginalEdgesForMove(pair.first, pair.second, variableNodeId, movedX, movedY);
+        if (intersection.has_value()) {
+            if (m_pGraph.getCrossingNodeForPair(pair.first, pair.second) == -1) {
+                m_pGraph.createCrossing(pair.first, pair.second, intersection->first, intersection->second);
             }
         }
+        processed.insert(key);
+    }
 
-        for (int otherEdgeId : candidateOtherEdges) {
+    // 2. Search for additional new/remaining intersections
+    for (int movedEdgeId : movedOriginalEdges) {
+        auto ep = findOriginalEdgeEndpoints(movedEdgeId);
+        if (!ep) continue;
+        const auto& nA = m_pGraph.getNode(ep->first);
+        const auto& nB = m_pGraph.getNode(ep->second);
+
+        auto candidates = collectCandidateOriginalEdgesForSegment(m_pGraph, grid, nA.x, nA.y, nB.x, nB.y);
+
+        for (int otherEdgeId : candidates) {
             if (movedEdgeId == otherEdgeId) continue;
-            if (otherEdgeId < 0) continue;
+            const std::uint64_t key = getPairKey(movedEdgeId, otherEdgeId);
+            if (processed.count(key)) continue;
 
-            const std::uint64_t key = pairKey(movedEdgeId, otherEdgeId);
-            if (!processed.insert(key).second) continue;
+            auto otherEp = findOriginalEdgeEndpoints(otherEdgeId);
+            if (!otherEp) continue;
 
-            const auto pair = normalizeEdgePair(movedEdgeId, otherEdgeId);
+            // Share endpoint check
+            if (ep->first == otherEp->first || ep->first == otherEp->second ||
+                ep->second == otherEp->first || ep->second == otherEp->second) continue;
 
-            auto otherEndpoints = findOriginalEdgeEndpoints(pair.second);
-            if (!otherEndpoints.has_value()) continue;
-
-            const bool sharesEndpoint =
-                movedEndpoints->first == otherEndpoints->first || movedEndpoints->first == otherEndpoints->second ||
-                movedEndpoints->second == otherEndpoints->first || movedEndpoints->second == otherEndpoints->second;
-
-            const int existingId = m_pGraph.getCrossingNodeForPair(pair.first, pair.second);
-            if (sharesEndpoint) {
-                if (existingId != -1) {
-                    if (m_pGraph.hasNode(existingId) &&
-                        m_pGraph.getNode(existingId).type == PlanarizedGraph::NodeType::CROSSING) {
-                        m_pGraph.destroyCrossing(existingId);
-                    }
-                }
-                continue;
-            }
-
-            auto intersection = intersectOriginalEdgesForMove(pair.first, pair.second, -1, 0.0, 0.0);
-
+            auto intersection = intersectOriginalEdgesForMove(movedEdgeId, otherEdgeId, variableNodeId, movedX, movedY);
             if (intersection.has_value()) {
+                const int existingId = m_pGraph.getCrossingNodeForPair(movedEdgeId, otherEdgeId);
                 if (existingId == -1) {
-                    m_pGraph.createCrossing(pair.first, pair.second, intersection->first, intersection->second);
-                } else {
-                    if (m_pGraph.hasNode(existingId) &&
-                        m_pGraph.getNode(existingId).type == PlanarizedGraph::NodeType::CROSSING) {
-                        m_pGraph.updateNodePosition(existingId, intersection->first, intersection->second);
-                    }
-                }
-            } else {
-                if (existingId != -1) {
-                    if (m_pGraph.hasNode(existingId) &&
-                        m_pGraph.getNode(existingId).type == PlanarizedGraph::NodeType::CROSSING) {
-                        m_pGraph.destroyCrossing(existingId);
-                    }
+                    m_pGraph.createCrossing(movedEdgeId, otherEdgeId, intersection->first, intersection->second);
                 }
             }
+            processed.insert(key);
         }
     }
 }
+
 
 RelocationStepResult RelocationManager::performRelocationStep() {
     RelocationStepResult result;
@@ -786,11 +783,32 @@ RelocationStepResult RelocationManager::performRelocationStep() {
 
     CrossingUpdatePlan plan = buildCrossingUpdatePlan(variableNodeId, analysis, targetFaceId);
 
-    applyCrossingRemovals(plan);
+    // =========================================================================
+    // EXECUTE GRAPH UPDATES: The "Wipe and Rebuild" Strategy
+    // =========================================================================
+    // 1. WIPE: Destroy all crossings on moved edges to guarantee pristine straight lines.
+    std::unordered_set<int> crossingsToWipe;
+    for (int movedEdgeId : movedOriginalEdges) {
+        if (movedEdgeId >= 0 && movedEdgeId < static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size())) {
+            for (int pEdgeId : m_pGraph.originalEdgeToPlanarEdges[movedEdgeId]) {
+                if (!m_pGraph.hasEdge(pEdgeId)) continue;
+                int u = m_pGraph.getEdge(pEdgeId).u_id;
+                int v = m_pGraph.getEdge(pEdgeId).v_id;
+                if (m_pGraph.getNode(u).type == PlanarizedGraph::NodeType::CROSSING) crossingsToWipe.insert(u);
+                if (m_pGraph.getNode(v).type == PlanarizedGraph::NodeType::CROSSING) crossingsToWipe.insert(v);
+            }
+        }
+    }
+    for (int cId : crossingsToWipe) {
+        m_pGraph.destroyCrossing(cId);
+    }
+
+    // 2. MOVE NODE: Lines are now perfectly straight segments going to the new coordinate.
     m_pGraph.updateNodePosition(variableNodeId, movedX, movedY);
 
-    applyCrossingInsertions(variableNodeId, movedX, movedY, plan);
-    reconcileCrossingsForMovedEdges(movedOriginalEdges);
+    // 3. REBUILD: Let Reconcile safely reconstruct all necessary crossings on straight geometry.
+    // (applyCrossingRemovals and applyCrossingInsertions are intentionally bypassed)
+    reconcileCrossingsForMovedEdges(movedOriginalEdges, plan, variableNodeId, movedX, movedY);
 
     result.moved = true;
     result.usedExplorationMove = false;
