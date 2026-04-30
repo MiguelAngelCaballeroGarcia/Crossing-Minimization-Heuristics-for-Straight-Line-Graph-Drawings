@@ -32,6 +32,7 @@ void GraphVisualizer::run(const Graph& originalGraph, PlanarizedGraph& planarGra
 }
 
 void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
+
     // --- Layer Toggles ---
     if (IsKeyPressed(KEY_ONE)) showOriginal = !showOriginal;
     if (IsKeyPressed(KEY_TWO)) showPlanarized = !showPlanarized;

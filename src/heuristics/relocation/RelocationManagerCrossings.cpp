@@ -1,5 +1,6 @@
 #include "../RelocationManager.hpp"
 #include "RelocationHelpers.hpp"
+#include "../../geometry/FruchtermanReingold_custom.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,8 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <iostream>
+#include <boost/concept_check.hpp>
 
 namespace {
 
@@ -734,7 +737,6 @@ void RelocationManager::reconcileCrossingsForMovedEdges(
         }
     }
 }
-
 
 RelocationStepResult RelocationManager::performRelocationStep() {
     RelocationStepResult result;

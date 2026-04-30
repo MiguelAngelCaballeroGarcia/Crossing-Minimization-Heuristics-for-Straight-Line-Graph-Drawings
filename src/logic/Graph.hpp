@@ -30,4 +30,6 @@ public:
 
     // Returns minX, minY, maxX, maxY from all nodes.
     std::tuple<double, double, double, double> getBounds() const;
+
+    void applyInitialForceDirectedLayout(int iterations);
 };

@@ -56,6 +56,10 @@ endif()
 # 2. DECLARAR FUENTES
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 
+# Exclude old OGDF-based FruchtermanReingold files (using custom implementation instead)
+list(FILTER SOURCES EXCLUDE REGEX "FruchtermanReingold\\.cpp$")
+list(FILTER SOURCES EXCLUDE REGEX "ogdf-master/")
+
 # 3. CREAR EL EJECUTABLE
 add_executable(${PROJECT_NAME} ${SOURCES})
 

@@ -349,11 +349,22 @@ std::optional<std::pair<int, double>> RelocationManager::chooseTargetFace(const 
 
     if (candidateFaces.empty()) return std::nullopt;
 
+    // --- Added Random Jump Logic (0.05 probability) ---
+    std::uniform_real_distribution<double> roll(0.0, 1.0);
+    if (roll(rng) < 0.0001) {
+        std::uniform_int_distribution<size_t> pickAny(0, candidateFaces.size() - 1);
+        int randomFaceId = candidateFaces[pickAny(rng)];
+        return std::make_pair(randomFaceId, analysis.faceWeights[randomFaceId]);
+    }
+    // --------------------------------------------------
+
     double bestDelta = std::numeric_limits<double>::infinity();
     for (int faceId : candidateFaces) {
         bestDelta = std::min(bestDelta, analysis.faceWeights[faceId]);
     }
 
+    // Note: We keep this check for the "best delta" path to ensure 
+    // we only move if it actually improves (or maintains) the crossing count.
     if (bestDelta > 0) {
         return std::nullopt;
     }
