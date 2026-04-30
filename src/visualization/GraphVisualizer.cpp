@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <chrono>
 #include <limits>
 #include <cstdlib>
 
@@ -105,6 +106,8 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
                 RelocationManager manager(planarGraph);
                 manager.setROIBoundaryMethod(roiBoundaryMethod);
 
+                // Time the batch of relocation steps
+                auto batchStart = std::chrono::high_resolution_clock::now();
                 for (int i = 0; i < iterations; ++i) {
                     RelocationStepResult step = manager.performRelocationStep();
                     if (step.moved) {
@@ -114,6 +117,8 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
                         lastBatchExplorationUsed = true;
                     }
                 }
+                auto batchEnd = std::chrono::high_resolution_clock::now();
+                lastBatchDurationMs = std::chrono::duration<double, std::milli>(batchEnd - batchStart).count();
 
                 if (originalGraphPtr) {
                     Graph currentGraph = *originalGraphPtr;
@@ -148,6 +153,7 @@ void GraphVisualizer::handleInput(PlanarizedGraph& planarGraph) {
 
                     std::cerr << "[Batch Complete] Iterations: " << iterations
                               << " | Moves: " << lastBatchMoves
+                              << " | Time (ms): " << lastBatchDurationMs
                               << " | Exact crossings: " << lastBatchExactCrossings
                               << " | Node-based crossings: " << lastBatchNodeBasedCrossings
                               << " | Diff: " << lastBatchCrossingDiff << "\n";

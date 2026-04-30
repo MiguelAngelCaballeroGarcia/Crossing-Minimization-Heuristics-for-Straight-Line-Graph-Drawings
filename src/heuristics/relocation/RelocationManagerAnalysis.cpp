@@ -12,7 +12,6 @@
 
 LocalRegionAnalysis RelocationManager::analyzeLocalRegions(const RegionOfInterest& roi, int variableNodeId) {
     LocalRegionAnalysis analysis;
-    resetStepCrossingCaches();
 
     analysis.localGeometry = extractAndClipGeometry(roi, variableNodeId);
     analysis.dualGraph = RegionBuilder::buildRegionsAndDualGraph(analysis.localGeometry);
@@ -351,7 +350,7 @@ std::optional<std::pair<int, double>> RelocationManager::chooseTargetFace(const 
 
     // --- Added Random Jump Logic (0.05 probability) ---
     std::uniform_real_distribution<double> roll(0.0, 1.0);
-    if (roll(rng) < 0.0001) {
+    if (roll(rng) < 0.00002) {
         std::uniform_int_distribution<size_t> pickAny(0, candidateFaces.size() - 1);
         int randomFaceId = candidateFaces[pickAny(rng)];
         return std::make_pair(randomFaceId, analysis.faceWeights[randomFaceId]);

@@ -31,6 +31,8 @@ RelocationManager::RelocationManager(PlanarizedGraph& pGraph)
             m_originalNodeIdSet.insert(node.id);  // Populate membership set
         }
     });
+
+    precomputeOriginalAdjacency();
 }
 
 int RelocationManager::selectVariableNode() {
@@ -165,15 +167,17 @@ RegionOfInterest RelocationManager::calculateROILocal3x3AroundNodeCell(int nodeI
     return makeROIFromCellBounds(minCol, maxCol, minRow, maxRow);
 }
 
+// Update the implementation in RelocationManager.cpp
 std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const RegionOfInterest& roi, int variableNodeId) {
     std::vector<LocalSegment> localGeometry;
     std::unordered_set<int> processedEdgeIds;
+    std::unordered_set<int> localOriginalNodes; // NEW: Harvest nodes locally
+
     const auto& grid = m_pGraph.getGrid();
     const auto incidentOriginalEdgeIds = relocation_detail::collectIncidentOriginalEdgeIds(variableNodeId, m_pGraph);
 
-    // Estimate and reserve capacity: 4 border segments + cells * avg edges per cell + rays
     int numCells = (roi.maxCol - roi.minCol + 1) * (roi.maxRow - roi.minRow + 1);
-    int estimatedCapacity = 4 + (numCells * 8) + 32;  // 4 borders + edges + rays
+    int estimatedCapacity = 4 + (numCells * 8) + 32;
     localGeometry.reserve(estimatedCapacity);
     processedEdgeIds.reserve(numCells * 8);
 
@@ -189,27 +193,36 @@ std::vector<LocalSegment> RelocationManager::extractAndClipGeometry(const Region
 
             for (int edgeId : edgeIdsInCell) {
                 if (!processedEdgeIds.insert(edgeId).second) continue;
-
                 if (!m_pGraph.hasEdge(edgeId)) continue;
+                
                 const auto& edge = m_pGraph.getEdge(edgeId);
 
-                if (incidentOriginalEdgeIds.count(edge.original_edge_id) > 0) continue;
-
-                if (!m_pGraph.hasNode(edge.u_id) || !m_pGraph.hasNode(edge.v_id)) continue;
-
+                // NEW: Harvest the endpoints of edges in this cell. 
+                // If they are ORIGINAL and inside the bounds, they are valid ray sources.
                 const auto& u = m_pGraph.getNode(edge.u_id);
                 const auto& v = m_pGraph.getNode(edge.v_id);
+                
+                if (u.type == PlanarizedGraph::NodeType::ORIGINAL &&
+                    u.x >= roi.minX && u.x <= roi.maxX && u.y >= roi.minY && u.y <= roi.maxY) {
+                    localOriginalNodes.insert(u.id);
+                }
+                if (v.type == PlanarizedGraph::NodeType::ORIGINAL &&
+                    v.x >= roi.minX && v.x <= roi.maxX && v.y >= roi.minY && v.y <= roi.maxY) {
+                    localOriginalNodes.insert(v.id);
+                }
 
+                if (incidentOriginalEdgeIds.count(edge.original_edge_id) > 0) continue;
+                
                 auto clippedSegment = clipToBoundingBox(u.x, u.y, v.x, v.y, roi, edge.original_edge_id);
                 if (clippedSegment.has_value()) {
-                    localGeometry.emplace_back(std::move(clippedSegment.value()));  // Move to avoid copy
+                    localGeometry.emplace_back(std::move(clippedSegment.value()));
                 }
             }
         }
     }
 
-    appendRaysToLocalGeometry(localGeometry, roi, variableNodeId);
-
+    // NEW: Pass the harvested nodes to avoid global graph traversal
+    appendRaysToLocalGeometry(localGeometry, roi, variableNodeId, localOriginalNodes);
     return localGeometry;
 }
 
@@ -289,54 +302,38 @@ std::optional<LocalSegment> RelocationManager::clipToBoundingBox(
     return std::nullopt;
 }
 
+// 2. Update appendRaysToLocalGeometry signature and logic
 void RelocationManager::appendRaysToLocalGeometry(std::vector<LocalSegment>& localGeometry,
                                                   const RegionOfInterest& roi,
-                                                  int variableNodeId) {
+                                                  int variableNodeId,
+                                                  const std::unordered_set<int>& localOriginalNodes) {
     auto neighbors = relocation_detail::collectOriginalNeighbors(variableNodeId, m_pGraph);
 
-    m_pGraph.forEachNode([&](int vId, const PlanarizedGraph::PlanarNode& vNode) {
-        if (vNode.type != PlanarizedGraph::NodeType::ORIGINAL) return;
-        if (vId == variableNodeId) return;
-
-        if (vNode.x < roi.minX || vNode.x > roi.maxX ||
-            vNode.y < roi.minY || vNode.y > roi.maxY) {
-            return;
-        }
+    // O(K) where K is nodes in ROI, eliminating the O(|V|) global scan bottleneck
+    for (int vId : localOriginalNodes) {
+        if (vId == variableNodeId) continue;
+        const auto& vNode = m_pGraph.getNode(vId);
 
         for (int neighborId : neighbors) {
-            if (vId == neighborId) continue;
-
-            if (!m_pGraph.hasNode(neighborId)) continue;
+            if (vId == neighborId || !m_pGraph.hasNode(neighborId)) continue;
             const auto& xNode = m_pGraph.getNode(neighborId);
 
             double dx = vNode.x - xNode.x;
             double dy = vNode.y - xNode.y;
-
             if (std::abs(dx) < EPS && std::abs(dy) < EPS) continue;
 
             double tMin = std::numeric_limits<double>::infinity();
-
             if (dx > EPS) tMin = std::min(tMin, (roi.maxX - vNode.x) / dx);
             else if (dx < -EPS) tMin = std::min(tMin, (roi.minX - vNode.x) / dx);
-
             if (dy > EPS) tMin = std::min(tMin, (roi.maxY - vNode.y) / dy);
             else if (dy < -EPS) tMin = std::min(tMin, (roi.minY - vNode.y) / dy);
 
             if (std::isinf(tMin) || tMin <= EPS) continue;
 
-            double endX = vNode.x + tMin * dx;
-            double endY = vNode.y + tMin * dy;
-
-            LocalSegment ray;
-            ray.x1 = vNode.x;
-            ray.y1 = vNode.y;
-            ray.x2 = endX;
-            ray.y2 = endY;
-            ray.originalEdgeId = -1;
-            ray.type = LocalSegmentType::RAY;
-            ray.raySourceNodeId = vId;
-            ray.rayEmittingNodeId = neighborId;
-            localGeometry.push_back(ray);
+            localGeometry.push_back({
+                vNode.x, vNode.y, vNode.x + tMin * dx, vNode.y + tMin * dy,
+                -1, LocalSegmentType::RAY, vId, neighborId
+            });
         }
-    });
+    }
 }

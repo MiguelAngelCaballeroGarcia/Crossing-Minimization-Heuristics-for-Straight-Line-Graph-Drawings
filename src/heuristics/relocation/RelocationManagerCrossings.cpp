@@ -18,56 +18,97 @@ namespace {
 
 constexpr double kIntersectionEpsilon = 1e-9;
 
-std::unordered_set<int> collectCandidateEdgesForSegment(const SpatialGrid& grid,
-                                                        double x1,
-                                                        double y1,
-                                                        double x2,
-                                                        double y2) {
-    std::unordered_set<int> candidateEdges;
-    if (grid.getNumCells() == 0) return candidateEdges;
+// OPTIMIZATION 1 & 2: DDA Grid Traversal and Vector instead of unordered_set
+void appendCandidateEdgesForSegmentDDA(const SpatialGrid& grid, 
+                                       double x1, double y1, 
+                                       double x2, double y2,
+                                       std::vector<int>& outCandidates) {
+    if (grid.getNumCells() == 0) return;
 
     const double minX = grid.getMinX();
     const double minY = grid.getMinY();
-    const double cellWidth = grid.getCellWidth();
-    const double cellHeight = grid.getCellHeight();
+    const double cellW = grid.getCellWidth();
+    const double cellH = grid.getCellHeight();
+    const int numX = grid.getNumCellsX();
+    const int numY = grid.getNumCellsY();
 
-    int minCol = static_cast<int>(std::floor((std::min(x1, x2) - minX) / cellWidth));
-    int maxCol = static_cast<int>(std::floor((std::max(x1, x2) - minX) / cellWidth));
-    int minRow = static_cast<int>(std::floor((std::min(y1, y2) - minY) / cellHeight));
-    int maxRow = static_cast<int>(std::floor((std::max(y1, y2) - minY) / cellHeight));
+    // Ray start and end in grid coordinates
+    double startColF = (x1 - minX) / cellW;
+    double startRowF = (y1 - minY) / cellH;
+    double endColF = (x2 - minX) / cellW;
+    double endRowF = (y2 - minY) / cellH;
 
-    minCol = std::clamp(minCol, 0, grid.getNumCellsX() - 1);
-    maxCol = std::clamp(maxCol, 0, grid.getNumCellsX() - 1);
-    minRow = std::clamp(minRow, 0, grid.getNumCellsY() - 1);
-    maxRow = std::clamp(maxRow, 0, grid.getNumCellsY() - 1);
+    int currentX = std::clamp(static_cast<int>(std::floor(startColF)), 0, numX - 1);
+    int currentY = std::clamp(static_cast<int>(std::floor(startRowF)), 0, numY - 1);
+    int endX = std::clamp(static_cast<int>(std::floor(endColF)), 0, numX - 1);
+    int endY = std::clamp(static_cast<int>(std::floor(endRowF)), 0, numY - 1);
 
-    for (int col = minCol; col <= maxCol; ++col) {
-        for (int row = minRow; row <= maxRow; ++row) {
-            const int cellIndex = relocation_detail::toCellIndex(col, row, grid);
-            const auto& cell = grid.getCell(cellIndex);
-            candidateEdges.insert(cell.edgeIndices.begin(), cell.edgeIndices.end());
+    const double dx = x2 - x1;
+    const double dy = y2 - y1;
+
+    const int stepX = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
+    const int stepY = (dy > 0) ? 1 : ((dy < 0) ? -1 : 0);
+
+    const double tDeltaX = (stepX != 0) ? std::abs(cellW / dx) : std::numeric_limits<double>::infinity();
+    const double tDeltaY = (stepY != 0) ? std::abs(cellH / dy) : std::numeric_limits<double>::infinity();
+
+    double tMaxX = (stepX > 0) ? ((currentX + 1) * cellW + minX - x1) / dx :
+                   (stepX < 0) ? ((currentX * cellW + minX - x1) / dx) : std::numeric_limits<double>::infinity();
+                   
+    double tMaxY = (stepY > 0) ? ((currentY + 1) * cellH + minY - y1) / dy :
+                   (stepY < 0) ? ((currentY * cellH + minY - y1) / dy) : std::numeric_limits<double>::infinity();
+
+    // DDA Traversal
+    while (true) {
+        const int cellIndex = relocation_detail::toCellIndex(currentX, currentY, grid);
+        const auto& cell = grid.getCell(cellIndex);
+        outCandidates.insert(outCandidates.end(), cell.edgeIndices.begin(), cell.edgeIndices.end());
+
+        if (currentX == endX && currentY == endY) break;
+
+        if (tMaxX < tMaxY) {
+            tMaxX += tDeltaX;
+            currentX += stepX;
+            if (currentX < 0 || currentX >= numX) break;
+        } else {
+            tMaxY += tDeltaY;
+            currentY += stepY;
+            if (currentY < 0 || currentY >= numY) break;
+        }
+    }
+}
+
+void collectCandidateOriginalEdgesForSegment(const PlanarizedGraph& pGraph,
+                                             const SpatialGrid& grid,
+                                             double x1, double y1, double x2, double y2,
+                                             std::vector<int>& planarEdgesBuffer,
+                                             std::vector<int>& originalEdgesBuffer,
+                                             std::vector<bool>& seenTracker) {
+    planarEdgesBuffer.clear();
+    originalEdgesBuffer.clear();
+
+    appendCandidateEdgesForSegmentDDA(grid, x1, y1, x2, y2, planarEdgesBuffer);
+
+    // Ensure tracker capacity
+    if (seenTracker.size() < pGraph.originalEdgeToPlanarEdges.size()) {
+        seenTracker.resize(pGraph.originalEdgeToPlanarEdges.size(), false);
+    }
+
+    for (int pEdgeId : planarEdgesBuffer) {
+        if (pGraph.hasEdge(pEdgeId)) {
+            int origId = pGraph.getEdge(pEdgeId).original_edge_id;
+            // O(1) Check and Insert
+            if (origId >= 0 && !seenTracker[origId]) {
+                seenTracker[origId] = true;
+                originalEdgesBuffer.push_back(origId);
+            }
         }
     }
 
-    return candidateEdges;
-}
-
-std::unordered_set<int> collectCandidateOriginalEdgesForSegment(const PlanarizedGraph& pGraph,
-                                                                const SpatialGrid& grid,
-                                                                double x1,
-                                                                double y1,
-                                                                double x2,
-                                                                double y2) {
-    const auto candidatePlanarEdges = collectCandidateEdgesForSegment(grid, x1, y1, x2, y2);
-    std::unordered_set<int> candidateOriginalEdges;
-    candidateOriginalEdges.reserve(candidatePlanarEdges.size());
-
-    for (int planarEdgeId : candidatePlanarEdges) {
-        if (!pGraph.hasEdge(planarEdgeId)) continue;
-        candidateOriginalEdges.insert(pGraph.getEdge(planarEdgeId).original_edge_id);
+    // O(N) Cleanup: Only reset the elements we actually touched
+    for (int origId : originalEdgesBuffer) {
+        seenTracker[origId] = false;
     }
-
-    return candidateOriginalEdges;
 }
 
 } // namespace
@@ -77,28 +118,29 @@ std::pair<int, int> RelocationManager::normalizeEdgePair(int edgeA, int edgeB) c
     return {edgeB, edgeA};
 }
 
-void RelocationManager::resetStepCrossingCaches() const {
-    m_pairToOriginalEdgeCache.clear();
-    m_pairToOriginalEdgeCacheValid = false;
-    m_originalEdgeEndpointsCache.clear();
-}
-
-void RelocationManager::ensurePairToOriginalEdgeCache() const {
-    if (m_pairToOriginalEdgeCacheValid) {
-        return;
-    }
-
-    m_pairToOriginalEdgeCache.clear();
-    m_pairToOriginalEdgeCache.reserve(m_pGraph.edges.size());
-    m_pGraph.forEachEdge([&](int, const PlanarizedGraph::PlanarEdge& edge) {
-        const int a = std::min(edge.u_id, edge.v_id);
-        const int b = std::max(edge.u_id, edge.v_id);
-        const long long key = (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
-        m_pairToOriginalEdgeCache[key] = edge.original_edge_id;
+// Update precomputeOriginalAdjacency to handle pre-allocation
+void RelocationManager::precomputeOriginalAdjacency() {
+    int maxNodeId = 0;
+    m_pGraph.forEachNode([&maxNodeId](int id, const auto&) {
+        if (id > maxNodeId) maxNodeId = id;
     });
+    
+    m_originalAdjacencyCache.assign(maxNodeId + 1, {});
+    // Ensure the endpoint cache is ready for O(1) access
+    m_originalEdgeEndpointsCache.assign(m_pGraph.originalEdgeToPlanarEdges.size(), {false, -1, -1});
 
-    m_pairToOriginalEdgeCacheValid = true;
+    for (size_t origEdgeId = 0; origEdgeId < m_pGraph.originalEdgeToPlanarEdges.size(); ++origEdgeId) {
+        auto ep = findOriginalEdgeEndpoints(origEdgeId);
+        if (ep) {
+            int u = ep->first;
+            int v = ep->second;
+            if (u <= maxNodeId) m_originalAdjacencyCache[u].push_back({v, origEdgeId});
+            if (v <= maxNodeId) m_originalAdjacencyCache[v].push_back({u, origEdgeId});
+        }
+    }
 }
+
+
 
 int RelocationManager::computeActiveSideForBoundary(int currentFaceId,
                                                     const DualGraphEdge& boundary,
@@ -207,58 +249,38 @@ std::vector<DualGraphEdge> RelocationManager::collectBoundaryPathEdges(const Loc
     return pathEdges;
 }
 
-std::vector<std::pair<int, int>> RelocationManager::collectIncidentEdgesForNode(int nodeId) const {
-    std::vector<std::pair<int, int>> incident;
+// Pure O(1) Adjacency Lookup
+const std::vector<std::pair<int, size_t>>& RelocationManager::collectIncidentEdgesForNode(int nodeId) const {
+    // We need a static empty vector to return if the nodeId is invalid
+    static const std::vector<std::pair<int, size_t>> empty_adj;
 
-    if (!m_pGraph.hasNode(nodeId)) return incident;
-    const auto& startNode = m_pGraph.getNode(nodeId);
-    if (startNode.type != PlanarizedGraph::NodeType::ORIGINAL) return incident;
-
-    ensurePairToOriginalEdgeCache();
-
-    std::unordered_set<int> seenOriginalEdges;
-    for (int firstHopId : startNode.adjacent_planar_nodes) {
-        const int a = std::min(nodeId, firstHopId);
-        const int b = std::max(nodeId, firstHopId);
-        const long long key = (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
-
-        auto edgeIt = m_pairToOriginalEdgeCache.find(key);
-        if (edgeIt == m_pairToOriginalEdgeCache.end()) continue;
-        const int originalEdgeId = edgeIt->second;
-        if (!seenOriginalEdges.insert(originalEdgeId).second) continue;
-
-        int current = firstHopId;
-        int previous = nodeId;
-
-        while (true) {
-            if (!m_pGraph.hasNode(current)) break;
-
-            const auto& currNode = m_pGraph.getNode(current);
-            if (currNode.type == PlanarizedGraph::NodeType::ORIGINAL) {
-                incident.push_back({current, originalEdgeId});
-                break;
-            }
-
-            int next = -1;
-            if (currNode.original_edge_1 == originalEdgeId) {
-                if (currNode.e1_neighbor_prev == previous) next = currNode.e1_neighbor_next;
-                else if (currNode.e1_neighbor_next == previous) next = currNode.e1_neighbor_prev;
-            }
-            if (next == -1 && currNode.original_edge_2 == originalEdgeId) {
-                if (currNode.e2_neighbor_prev == previous) next = currNode.e2_neighbor_next;
-                else if (currNode.e2_neighbor_next == previous) next = currNode.e2_neighbor_prev;
-            }
-
-            if (next == -1) break;
-            previous = current;
-            current = next;
-        }
+    if (nodeId < 0 || nodeId >= static_cast<int>(m_originalAdjacencyCache.size())) {
+        return empty_adj;
     }
-
-    return incident;
+    return m_originalAdjacencyCache[nodeId];
 }
 
-std::vector<std::pair<int, int>> RelocationManager::collectSelectedNeighborEdges(int variableNodeId) const {
+// Pure math: No node lookups, no graph dependency
+bool RelocationManager::intersectSegments(double x1, double y1, double x2, double y2,
+                                          double x3, double y3, double x4, double y4,
+                                          double& outX, double& outY) const {
+    const double den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (std::abs(den) < kIntersectionEpsilon) return false;
+
+    const double t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+    const double u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / den;
+
+    if (t <= kIntersectionEpsilon || t >= 1.0 - kIntersectionEpsilon || 
+        u <= kIntersectionEpsilon || u >= 1.0 - kIntersectionEpsilon) {
+        return false;
+    }
+
+    outX = x1 + t * (x2 - x1);
+    outY = y1 + t * (y2 - y1);
+    return true;
+}
+
+const std::vector<std::pair<int, size_t>>& RelocationManager::collectSelectedNeighborEdges(int variableNodeId) const {
     return collectIncidentEdgesForNode(variableNodeId);
 }
 
@@ -370,16 +392,23 @@ void RelocationManager::collectTransitionCrossingPairs(int variableNodeId,
     }
 }
 
+// Update this function in RelocationManagerCrossings.cpp
 std::optional<std::pair<int, int>> RelocationManager::findOriginalEdgeEndpoints(int originalEdgeId) const {
-    auto cached = m_originalEdgeEndpointsCache.find(originalEdgeId);
-    if (cached != m_originalEdgeEndpointsCache.end()) {
-        return cached->second;
+    if (originalEdgeId < 0) return std::nullopt;
+    
+    // OPTIMIZATION: Pure O(1) lookup. Pre-allocation happens in precomputeOriginalAdjacency.
+    if (originalEdgeId < static_cast<int>(m_originalEdgeEndpointsCache.size())) {
+        const auto& cached = m_originalEdgeEndpointsCache[originalEdgeId];
+        if (cached.valid) {
+            return std::make_pair(cached.endpointA, cached.endpointB);
+        }
+    } else {
+        // Fallback for safety if the graph grew unexpectedly
+        m_originalEdgeEndpointsCache.resize(originalEdgeId + 100); 
     }
 
-    if (originalEdgeId < 0 ||
-        originalEdgeId >= static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size()) ||
+    if (originalEdgeId >= static_cast<int>(m_pGraph.originalEdgeToPlanarEdges.size()) ||
         m_pGraph.originalEdgeToPlanarEdges[originalEdgeId].empty()) {
-        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
         return std::nullopt;
     }
 
@@ -409,147 +438,106 @@ std::optional<std::pair<int, int>> RelocationManager::findOriginalEdgeEndpoints(
             prev = current;
             current = next;
         }
+        return std::nullopt; // FIXED: MSVC C4715 requirement
     };
 
     const int anyPlanarEdgeId = m_pGraph.originalEdgeToPlanarEdges[originalEdgeId].front();
-    if (!m_pGraph.hasEdge(anyPlanarEdgeId)) {
-        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
-        return std::nullopt;
-    }
+    if (!m_pGraph.hasEdge(anyPlanarEdgeId)) return std::nullopt;
+    
     const auto& e = m_pGraph.getEdge(anyPlanarEdgeId);
+    auto endA = traverseToOriginal(e.u_id, e.v_id);
+    auto endB = traverseToOriginal(e.v_id, e.u_id);
 
-    const int a = e.u_id;
-    const int b = e.v_id;
-    auto endA = traverseToOriginal(a, b);
-    auto endB = traverseToOriginal(b, a);
+    if (!endA.has_value() || !endB.has_value()) return std::nullopt;
 
-    if (!endA.has_value() || !endB.has_value()) {
-        m_originalEdgeEndpointsCache[originalEdgeId] = std::nullopt;
-        return std::nullopt;
-    }
+    // Cache the result
+    auto& cached = m_originalEdgeEndpointsCache[originalEdgeId];
+    cached.valid = true;
+    cached.endpointA = *endA;
+    cached.endpointB = *endB;
 
-    const auto endpoints = std::make_pair(*endA, *endB);
-    m_originalEdgeEndpointsCache[originalEdgeId] = endpoints;
-    return endpoints;
+    return std::make_pair(*endA, *endB);
 }
 
-std::optional<std::pair<double, double>> RelocationManager::intersectOriginalEdgesForMove(int edgeA,
-                                                                                           int edgeB,
-                                                                                           int variableNodeId,
-                                                                                           double movedX,
-                                                                                           double movedY) const {
+// Refactored wrapper for existing logic that still relies on edge IDs
+bool RelocationManager::intersectOriginalEdgesForMove(int edgeA, int edgeB, int variableNodeId, 
+                                                      double movedX, double movedY, 
+                                                      double& outX, double& outY) const {
     auto epA = findOriginalEdgeEndpoints(edgeA);
     auto epB = findOriginalEdgeEndpoints(edgeB);
-    if (!epA.has_value() || !epB.has_value()) return std::nullopt;
+    if (!epA || !epB) return false;
 
-    auto getPointForEdgeEndpoint = [&](int nodeId) -> std::optional<std::pair<double, double>> {
-        if (nodeId == variableNodeId) {
-            return std::make_pair(movedX, movedY);
-        }
-        if (!m_pGraph.hasNode(nodeId)) return std::nullopt;
-        const auto& node = m_pGraph.getNode(nodeId);
-        return std::make_pair(node.x, node.y);
+    auto getPoint = [&](int nodeId, double& x, double& y) {
+        if (nodeId == variableNodeId) { x = movedX; y = movedY; return; }
+        const auto& node = m_pGraph.getNode(nodeId); x = node.x; y = node.y;
     };
 
-    auto a1 = getPointForEdgeEndpoint(epA->first);
-    auto a2 = getPointForEdgeEndpoint(epA->second);
-    auto b1 = getPointForEdgeEndpoint(epB->first);
-    auto b2 = getPointForEdgeEndpoint(epB->second);
-    if (!a1.has_value() || !a2.has_value() || !b1.has_value() || !b2.has_value()) return std::nullopt;
+    double x1, y1, x2, y2, x3, y3, x4, y4;
+    getPoint(epA->first, x1, y1); getPoint(epA->second, x2, y2);
+    getPoint(epB->first, x3, y3); getPoint(epB->second, x4, y4);
 
-    const double x1 = a1->first;
-    const double y1 = a1->second;
-    const double x2 = a2->first;
-    const double y2 = a2->second;
-    const double x3 = b1->first;
-    const double y3 = b1->second;
-    const double x4 = b2->first;
-    const double y4 = b2->second;
+    // Fast AABB check here
+    double min1X = std::min(x1, x2), max1X = std::max(x1, x2);
+    double min2X = std::min(x3, x4), max2X = std::max(x3, x4);
+    if (max1X < min2X || min1X > max2X) return false;
 
-    const double den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if (std::abs(den) < kIntersectionEpsilon) return std::nullopt;
+    double min1Y = std::min(y1, y2), max1Y = std::max(y1, y2);
+    double min2Y = std::min(y3, y4), max2Y = std::max(y3, y4);
+    if (max1Y < min2Y || min1Y > max2Y) return false;
 
-    const double t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
-    const double u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / den;
-
-    const double eps = kIntersectionEpsilon;
-    if (t <= eps || t >= 1.0 - eps || u <= eps || u >= 1.0 - eps) {
-        return std::nullopt;
-    }
-
-    return std::make_pair(x1 + t * (x2 - x1), y1 + t * (y2 - y1));
+    return intersectSegments(x1, y1, x2, y2, x3, y3, x4, y4, outX, outY);
 }
 
+// 1. Refactored Counter: Zero Graph Lookups, Pure Math
 int RelocationManager::countGlobalCrossingsForVariableAtPosition(
-    int variableNodeId,
-    double movedX,
-    double movedY,
-    const std::unordered_set<int>& variableIncidentEdges) const {
-    if (variableIncidentEdges.empty()) return 0;
+    int variableNodeId, 
+    double movedX, double movedY,
+    const std::unordered_set<int>& variableIncidentEdges,
+    const std::vector<PrecomputedStaticEdge>& staticEdges) const {
 
-    const auto& grid = m_pGraph.getGrid();
-    if (grid.getNumCells() == 0) return 0;
+    if (variableIncidentEdges.empty() || staticEdges.empty()) return 0;
 
     int count = 0;
-    std::set<std::pair<int, int>> visitedPairs;
+    double outX, outY;
 
     for (int movedEdgeId : variableIncidentEdges) {
         auto movedEndpoints = findOriginalEdgeEndpoints(movedEdgeId);
-        if (!movedEndpoints.has_value()) continue;
+        if (!movedEndpoints) continue;
 
-        auto movedPointForNode = [&](int nodeId) -> std::optional<std::pair<double, double>> {
-            if (nodeId == variableNodeId) {
-                return std::make_pair(movedX, movedY);
+        // Resolve moving coordinates ONCE per moved edge
+        double movedAx, movedAy, movedBx, movedBy;
+        if (movedEndpoints->first == variableNodeId) { movedAx = movedX; movedAy = movedY; }
+        else { const auto& n = m_pGraph.getNode(movedEndpoints->first); movedAx = n.x; movedAy = n.y; }
+        
+        if (movedEndpoints->second == variableNodeId) { movedBx = movedX; movedBy = movedY; }
+        else { const auto& n = m_pGraph.getNode(movedEndpoints->second); movedBx = n.x; movedBy = n.y; }
+
+        // Precompute AABB of the moving edge ONCE
+        const double minMx = std::min(movedAx, movedBx);
+        const double maxMx = std::max(movedAx, movedBx);
+        const double minMy = std::min(movedAy, movedBy);
+        const double maxMy = std::max(movedAy, movedBy);
+
+        // Inner Loop: Extremely fast contiguous array iteration
+        for (const auto& staticEdge : staticEdges) {
+            // Endpoint check (O(1) memory)
+            if (movedEndpoints->first == staticEdge.epA || movedEndpoints->first == staticEdge.epB ||
+                movedEndpoints->second == staticEdge.epA || movedEndpoints->second == staticEdge.epB) {
+                continue;
             }
-            if (!m_pGraph.hasNode(nodeId)) return std::nullopt;
-            const auto& node = m_pGraph.getNode(nodeId);
-            return std::make_pair(node.x, node.y);
-        };
 
-        auto movedA = movedPointForNode(movedEndpoints->first);
-        auto movedB = movedPointForNode(movedEndpoints->second);
-        if (!movedA.has_value() || !movedB.has_value()) continue;
+            // Fast AABB Check against precomputed boundaries
+            if (maxMx < staticEdge.minX || minMx > staticEdge.maxX) continue;
+            if (maxMy < staticEdge.minY || minMy > staticEdge.maxY) continue;
 
-        const auto candidateEdges = collectCandidateOriginalEdgesForSegment(
-            m_pGraph,
-            grid,
-            movedA->first,
-            movedA->second,
-            movedB->first,
-            movedB->second
-        );
-
-        for (int otherEdgeId : candidateEdges) {
-            if (otherEdgeId == movedEdgeId) continue;
-            if (variableIncidentEdges.count(otherEdgeId) > 0) continue;
-
-            const auto pair = normalizeEdgePair(movedEdgeId, otherEdgeId);
-            if (!visitedPairs.insert(pair).second) continue;
-
-            auto otherEndpoints = findOriginalEdgeEndpoints(otherEdgeId);
-            if (!otherEndpoints.has_value()) continue;
-
-            const bool sharesEndpoint =
-                movedEndpoints->first == otherEndpoints->first ||
-                movedEndpoints->first == otherEndpoints->second ||
-                movedEndpoints->second == otherEndpoints->first ||
-                movedEndpoints->second == otherEndpoints->second;
-            if (sharesEndpoint) continue;
-
-            auto intersection = intersectOriginalEdgesForMove(
-                movedEdgeId,
-                otherEdgeId,
-                variableNodeId,
-                movedX,
-                movedY
-            );
-
-            if (intersection.has_value()) {
+            // Pure math execution
+            if (intersectSegments(movedAx, movedAy, movedBx, movedBy, 
+                                  staticEdge.ax, staticEdge.ay, staticEdge.bx, staticEdge.by, 
+                                  outX, outY)) {
                 ++count;
             }
         }
     }
-
     return count;
 }
 
@@ -557,25 +545,28 @@ int RelocationManager::evaluateGlobalCrossingDeltaForMove(
     int variableNodeId,
     double movedX,
     double movedY,
-    const std::unordered_set<int>& variableIncidentEdges) const {
+    const std::unordered_set<int>& variableIncidentEdges,
+    const std::vector<PrecomputedStaticEdge>& staticEdges) const {
+    
     if (!m_pGraph.hasNode(variableNodeId)) return 0;
     const auto& variableNode = m_pGraph.getNode(variableNodeId);
 
-    const double currentX = variableNode.x;
-    const double currentY = variableNode.y;
-
+    // Call with the new 5th argument
     const int before = countGlobalCrossingsForVariableAtPosition(
         variableNodeId,
-        currentX,
-        currentY,
-        variableIncidentEdges
+        variableNode.x,
+        variableNode.y,
+        variableIncidentEdges,
+        staticEdges
     );
 
+    // Call with the new 5th argument
     const int after = countGlobalCrossingsForVariableAtPosition(
         variableNodeId,
         movedX,
         movedY,
-        variableIncidentEdges
+        variableIncidentEdges,
+        staticEdges
     );
 
     return after - before;
@@ -660,19 +651,15 @@ void RelocationManager::applyCrossingInsertions(int variableNodeId,
         const int edgeA = p.first;
         const int edgeB = p.second;
 
-        if (m_pGraph.getCrossingNodeForPair(edgeA, edgeB) != -1) {
-            continue;
-        }
+        if (m_pGraph.getCrossingNodeForPair(edgeA, edgeB) != -1) continue;
 
-        const auto intersection = intersectOriginalEdgesForMove(edgeA, edgeB, variableNodeId, movedX, movedY);
-        if (!intersection.has_value()) {
-            continue;
+        double intX, intY;
+        if (intersectOriginalEdgesForMove(edgeA, edgeB, variableNodeId, movedX, movedY, intX, intY)) {
+            m_pGraph.createCrossing(edgeA, edgeB, intX, intY);
         }
-        m_pGraph.createCrossing(edgeA, edgeB, intersection->first, intersection->second);
     }
 }
 
-// REFACTORED VERSION: Wipe is handled in performRelocationStep. This solely handles the clean rebuild.
 void RelocationManager::reconcileCrossingsForMovedEdges(
     const std::unordered_set<int>& movedOriginalEdges,
     const CrossingUpdatePlan& plan,
@@ -684,56 +671,69 @@ void RelocationManager::reconcileCrossingsForMovedEdges(
     const auto& grid = m_pGraph.getGrid();
     if (grid.getNumCells() == 0) return;
 
-    std::unordered_set<std::uint64_t> processed;
-    auto getPairKey = [](int a, int b) {
-        const std::uint64_t lo = static_cast<std::uint64_t>(std::min(a, b));
-        const std::uint64_t hi = static_cast<std::uint64_t>(std::max(a, b));
-        return (lo << 32) | hi;
-    };
-
     // 1. Verify appearing pairs from the plan
     for (const auto& planPair : plan.appearingPairs) {
-        const auto pair = normalizeEdgePair(planPair.first, planPair.second);
-        const std::uint64_t key = getPairKey(pair.first, pair.second);
-        
-        auto intersection = intersectOriginalEdgesForMove(pair.first, pair.second, variableNodeId, movedX, movedY);
-        if (intersection.has_value()) {
-            if (m_pGraph.getCrossingNodeForPair(pair.first, pair.second) == -1) {
-                m_pGraph.createCrossing(pair.first, pair.second, intersection->first, intersection->second);
+        double intX, intY;
+        if (intersectOriginalEdgesForMove(planPair.first, planPair.second, variableNodeId, movedX, movedY, intX, intY)) {
+            if (m_pGraph.getCrossingNodeForPair(planPair.first, planPair.second) == -1) {
+                m_pGraph.createCrossing(planPair.first, planPair.second, intX, intY);
             }
         }
-        processed.insert(key);
     }
 
     // 2. Search for additional new/remaining intersections
     for (int movedEdgeId : movedOriginalEdges) {
         auto ep = findOriginalEdgeEndpoints(movedEdgeId);
         if (!ep) continue;
-        const auto& nA = m_pGraph.getNode(ep->first);
-        const auto& nB = m_pGraph.getNode(ep->second);
 
-        auto candidates = collectCandidateOriginalEdgesForSegment(m_pGraph, grid, nA.x, nA.y, nB.x, nB.y);
+        // NEW: Hoist the moving edge coordinate resolution outside the inner loop!
+        double movedAx, movedAy, movedBx, movedBy;
+        if (ep->first == variableNodeId) { movedAx = movedX; movedAy = movedY; }
+        else { const auto& nA = m_pGraph.getNode(ep->first); movedAx = nA.x; movedAy = nA.y; }
 
-        for (int otherEdgeId : candidates) {
+        if (ep->second == variableNodeId) { movedBx = movedX; movedBy = movedY; }
+        else { const auto& nB = m_pGraph.getNode(ep->second); movedBx = nB.x; movedBy = nB.y; }
+
+        // NEW: Precompute the AABB of the moving edge
+        const double minMx = std::min(movedAx, movedBx);
+        const double maxMx = std::max(movedAx, movedBx);
+        const double minMy = std::min(movedAy, movedBy);
+        const double maxMy = std::max(movedAy, movedBy);
+
+        collectCandidateOriginalEdgesForSegment(
+            m_pGraph, grid, movedAx, movedAy, movedBx, movedBy,
+            m_tempPlanarEdgesBuffer, m_tempOriginalEdgesBuffer, m_seenOriginalEdgesTracker);
+
+        for (int otherEdgeId : m_tempOriginalEdgesBuffer) {
             if (movedEdgeId == otherEdgeId) continue;
-            const std::uint64_t key = getPairKey(movedEdgeId, otherEdgeId);
-            if (processed.count(key)) continue;
+            if (movedOriginalEdges.count(otherEdgeId) > 0 && movedEdgeId > otherEdgeId) continue;
 
             auto otherEp = findOriginalEdgeEndpoints(otherEdgeId);
             if (!otherEp) continue;
 
-            // Share endpoint check
             if (ep->first == otherEp->first || ep->first == otherEp->second ||
                 ep->second == otherEp->first || ep->second == otherEp->second) continue;
 
-            auto intersection = intersectOriginalEdgesForMove(movedEdgeId, otherEdgeId, variableNodeId, movedX, movedY);
-            if (intersection.has_value()) {
+            // NEW: Resolve static edge coordinates and run fast AABB inline
+            const auto& nC = m_pGraph.getNode(otherEp->first);
+            const auto& nD = m_pGraph.getNode(otherEp->second);
+
+            const double minOx = std::min(nC.x, nD.x);
+            const double maxOx = std::max(nC.x, nD.x);
+            if (maxMx < minOx || minMx > maxOx) continue;
+
+            const double minOy = std::min(nC.y, nD.y);
+            const double maxOy = std::max(nC.y, nD.y);
+            if (maxMy < minOy || minMy > maxOy) continue;
+
+            // NEW: Bypass intersectOriginalEdgesForMove overhead entirely
+            double otherIntX, otherIntY;
+            if (intersectSegments(movedAx, movedAy, movedBx, movedBy, nC.x, nC.y, nD.x, nD.y, otherIntX, otherIntY)) {
                 const int existingId = m_pGraph.getCrossingNodeForPair(movedEdgeId, otherEdgeId);
                 if (existingId == -1) {
-                    m_pGraph.createCrossing(movedEdgeId, otherEdgeId, intersection->first, intersection->second);
+                    m_pGraph.createCrossing(movedEdgeId, otherEdgeId, otherIntX, otherIntY);
                 }
             }
-            processed.insert(key);
         }
     }
 }

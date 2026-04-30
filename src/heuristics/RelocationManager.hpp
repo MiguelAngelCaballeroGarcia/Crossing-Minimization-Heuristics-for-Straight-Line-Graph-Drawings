@@ -63,6 +63,14 @@ enum class ROIBoundaryMethod {
     LOCAL_3X3_AROUND_NODE_CELL
 };
 
+// Add to RelocationHelpers.h or anonymous namespace in RelocationManager.cpp
+struct PrecomputedStaticEdge {
+    int originalEdgeId;
+    int epA, epB; // Endpoint Node IDs
+    double ax, ay, bx, by;
+    double minX, maxX, minY, maxY;
+};
+
 class RelocationManager {
 public:
     // Takes references to the core logic structures
@@ -100,8 +108,9 @@ public:
      * @param variableNodeId The node being relocated.
      */
     void appendRaysToLocalGeometry(std::vector<LocalSegment>& localGeometry,
-                                            const RegionOfInterest& roi,
-                                            int variableNodeId);
+                                const RegionOfInterest& roi,
+                                int variableNodeId,
+                                const std::unordered_set<int>& localOriginalNodes); // NEW PARAMETER
 
     /**
      * @brief Analyzes local regions and computes face weights based on the weighting algorithm.
@@ -148,9 +157,31 @@ private:
     std::unordered_set<int> m_originalNodeIdSet;  // For O(1) membership tests
     std::mt19937 m_rng;  // Seeded once in constructor for consistent performance
     ROIBoundaryMethod m_roiBoundaryMethod = ROIBoundaryMethod::NEIGHBORS_INSIDE;
-    mutable std::unordered_map<long long, int> m_pairToOriginalEdgeCache;
-    mutable bool m_pairToOriginalEdgeCacheValid = false;
-    mutable std::unordered_map<int, std::optional<std::pair<int, int>>> m_originalEdgeEndpointsCache;
+    
+    // --- NEW: Topological Caches ---
+    // Maps original nodeId -> list of {neighborOriginalNodeId, originalEdgeId}
+    std::vector<std::vector<std::pair<int, size_t>>> m_originalAdjacencyCache;
+    void precomputeOriginalAdjacency();
+
+    // --- NEW: Flat trackers for O(1) checks in hot loops ---
+    mutable std::vector<bool> m_isIncidentEdgeTracker; 
+
+    // --- NEW: Pure Geometric Intersection ---
+    bool intersectSegments(double x1, double y1, double x2, double y2,
+                           double x3, double y3, double x4, double y4,
+                           double& outX, double& outY) const;
+
+    // Add these mutable buffers for zero-allocation hot loops
+    mutable std::vector<int> m_tempPlanarEdgesBuffer;
+    mutable std::vector<int> m_tempOriginalEdgesBuffer;
+    mutable std::vector<bool> m_seenOriginalEdgesTracker; // Fixes thread-safety of the static variable
+    
+    struct EndpointCacheEntry {
+        bool valid = false;
+        int endpointA = -1;
+        int endpointB = -1;
+    };
+    mutable std::vector<EndpointCacheEntry> m_originalEdgeEndpointsCache;
 
     RegionOfInterest calculateROINeighborsInside(int nodeId) const;
     RegionOfInterest calculateROIFullGrid() const;
@@ -184,8 +215,8 @@ private:
     std::vector<DualGraphEdge> collectBoundaryPathEdges(const LocalRegionAnalysis& analysis,
                                                         int targetFaceId) const;
 
-    std::vector<std::pair<int, int>> collectSelectedNeighborEdges(int variableNodeId) const;
-    std::vector<std::pair<int, int>> collectIncidentEdgesForNode(int nodeId) const;
+    const std::vector<std::pair<int, size_t>>& collectIncidentEdgesForNode(int nodeId) const;
+    const std::vector<std::pair<int, size_t>>& collectSelectedNeighborEdges(int variableNodeId) const;
 
     void collectTransitionCrossingPairs(int variableNodeId,
                                         int currentFaceId,
@@ -195,19 +226,22 @@ private:
                                         const DualGraph& dualGraph) const;
 
     std::optional<std::pair<int, int>> findOriginalEdgeEndpoints(int originalEdgeId) const;
-    std::optional<std::pair<double, double>> intersectOriginalEdgesForMove(int edgeA,
-                                                                           int edgeB,
-                                                                           int variableNodeId,
-                                                                           double movedX,
-                                                                           double movedY) const;
-    int countGlobalCrossingsForVariableAtPosition(int variableNodeId,
-                                                  double movedX,
-                                                  double movedY,
-                                                  const std::unordered_set<int>& variableIncidentEdges) const;
+
+    bool intersectOriginalEdgesForMove(int edgeA, int edgeB, int variableNodeId, 
+                                   double movedX, double movedY, 
+                                   double& outX, double& outY) const;
+
+    int countGlobalCrossingsForVariableAtPosition(
+        int variableNodeId, 
+        double movedX, double movedY,
+        const std::unordered_set<int>& variableIncidentEdges,
+        const std::vector<PrecomputedStaticEdge>& staticEdges) const;
+
     int evaluateGlobalCrossingDeltaForMove(int variableNodeId,
                                            double movedX,
                                            double movedY,
-                                           const std::unordered_set<int>& variableIncidentEdges) const;
+                                           const std::unordered_set<int>& variableIncidentEdges,
+                                           const std::vector<PrecomputedStaticEdge>& staticEdges) const;
 
     std::optional<std::pair<int, double>> chooseTargetFace(const LocalRegionAnalysis& analysis,
                                                            std::mt19937& rng) const;
@@ -218,8 +252,6 @@ private:
                                        double movedX, double movedY);
     std::vector<int> computeFaceGlobalCrossingDeltas(const LocalRegionAnalysis& analysis,
                                                      int variableNodeId) const;
-    void resetStepCrossingCaches() const;
-    void ensurePairToOriginalEdgeCache() const;
     
     // Determine which side of an infinite directed line p1->p2 a point falls on.
     int whichSideOfLine(double px, double py, double x1, double y1, double x2, double y2) const;

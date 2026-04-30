@@ -44,6 +44,7 @@ private:
     int lastBatchExactCrossings = -1;
     int lastBatchNodeBasedCrossings = -1;
     int lastBatchCrossingDiff = 0;
+    double lastBatchDurationMs = 0.0; // Duration in milliseconds for last batch of iterations
 
     void handleInput(PlanarizedGraph& planarGraph);
     void render(const Graph& originalGraph, const PlanarizedGraph& planarGraph, const SpatialGrid& grid);
